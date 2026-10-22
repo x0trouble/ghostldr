@@ -16,11 +16,11 @@ core runs it before the title when more than one title is installed, or with
 
 Fork additions (docs/host-tooling.md): a boot first runs a preflight
 coverage check when a local app0 and the NID name table are staged:
-imports that would bind to stubs (which return 0 and look like success
-to the title) refuse the boot unless --force-preflight is given.  The
-full report lands in build/ghostldr/preflight.md.  The payload also
-pins the extension's SHA-256 (GHOSTLDR_EXT_SHA256), which the core
-verifies after the CRC-32 screen.
+if imports would bind to stubs (which return 0 and look like success
+to the title), it asks before booting, unless --force-preflight is
+given. The full report lands in build/ghostldr/preflight.md.  The
+payload also pins the extension's SHA-256 (GHOSTLDR_EXT_SHA256),
+which the core verifies after the CRC-32 screen.
 """
 
 from __future__ import annotations
@@ -263,11 +263,14 @@ def doctor(args: argparse.Namespace) -> int:
 
 
 def preflight(force: bool) -> None:
-    """Fork: coverage-gate a boot against a staged local app0.
+    """Coverage-gate a boot against a staged local app0.
 
     Skips cleanly when there is nothing to check against (no local
-    app0, or a tree with no generated name table): the gate must never
-    be the reason a boot fails on a tree that cannot run the checker.
+    app0, or a release tree with no generated name table): the gate
+    must never be the reason a boot fails on a tree that cannot run
+    the checker.  Unresolved imports ask before booting (upstream's
+    refinement, fork commit d959276); with no terminal to ask on,
+    the boot stops.
     """
     app0 = ROOT / "build/ghost/app0"
     if not (app0 / "eboot.bin").exists():
@@ -291,14 +294,26 @@ def preflight(force: bool) -> None:
     rep = json.loads(out_json.read_text())
     by = rep["summary"]["functions_by_class"]
     un = by.get("UNRESOLVED", 0)
-    print(f"preflight: {rep['title']}: " +
-          ", ".join(f"{k} {v}" for k, v in sorted(by.items())) +
-          f" (report: build/ghostldr/preflight.md)", flush=True)
-    if un and not force:
-        raise SystemExit(
-            f"preflight: {un} imports resolve to nothing; the title "
-            "would call stubs that return 0.  See "
-            "build/ghostldr/preflight.md, or pass --force-preflight.")
+    print(f"preflight: {rep['summary']['functions']} functions - "
+          f"{by.get('CORE-HLE', 0)} core-HLE, {by.get('EXT-HLE', 0)} ext-HLE, "
+          f"{by.get('TITLE', 0)} title, {by.get('HOST', 0)} host, "
+          f"{un} unresolved (report: build/ghostldr/preflight.md)", flush=True)
+    if not un or force:
+        return
+    libs = [row["library"] for row in rep["libraries"]
+            if row["classes"].get("UNRESOLVED")]
+    print(f"preflight: {un} imports would bind to stubs that return 0 "
+          f"(libraries: {', '.join(libs[:5])}); see "
+          "build/ghostldr/preflight.md", flush=True)
+    if not sys.stdin.isatty():
+        raise SystemExit("preflight: no terminal to ask on; re-run with "
+                         "--force-preflight to boot anyway")
+    try:
+        answer = input("Boot anyway? [y/N] ").strip().lower()
+    except EOFError:
+        answer = ""
+    if answer not in ("y", "yes"):
+        raise SystemExit("preflight: boot cancelled")
 
 
 def recorder_running() -> int:
@@ -358,7 +373,7 @@ def main() -> int:
                              "font first (auto; experimental: it crashed SWRR on a 13.60 PS5)")
     parser.add_argument("--no-selector", action="store_true", help="do not serve the game selector")
     parser.add_argument("--force-preflight", action="store_true",
-                        help="fork: boot even when the preflight coverage gate finds unresolved imports")
+                        help="fork: boot without being asked when the preflight coverage check finds unresolved imports")
     parser.add_argument("--diag", action="store_true",
                         help="with probe: log what the loader needs to know about this console (PS4 support, "
                              "docs/ps4.md); boots and releases nothing")
@@ -388,6 +403,8 @@ def main() -> int:
     else:
         print(f"recorder (pid {recorder}) is logging to build/ghostldr/run.log", flush=True)
     if args.mode in ("probe", "boot"):
+        if args.mode == "boot":   # fork: coverage gate (skips cleanly without a staged app0)
+            preflight(args.force_preflight)
         if args.no_build:
             needed = (CORE, LAYOUT, EXT) if args.mode == "boot" else (CORE, LAYOUT)
             missing = [p.relative_to(ROOT) for p in needed if not p.exists()]
@@ -425,8 +442,6 @@ def main() -> int:
         except profiles.ProfileError as e:
             raise SystemExit(str(e))
         payload = f'GHOSTLDR_PROFILE_HEX = "{bundle.hex()}"\n'.encode() + payload
-        if args.mode == "boot":   # fork: coverage gate (skips cleanly without a staged app0)
-            preflight(args.force_preflight)
         print(f"sending {len(payload)} bytes of Lua to {args.host}:9026", flush=True)
         send_lua(args.host, payload)
         if ext and not ext_server.sent.wait(60):
