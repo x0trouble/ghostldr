@@ -99,9 +99,16 @@ u64 hle_lookup(const char *lib, const char *name)
 {
     return strcmp(name, "sceKernelOpen") == 0 && (!lib || strcmp(lib, "libkernel") == 0) ? CORE_OPEN : 0;
 }
+#ifndef ENV_REAL_LOADER /* kernel.c links loader.c and calls through call_gadget6 */
 u64 module_export(struct module *m, const char *nid) { return 0; }
+#endif
+/* title profiles (profile.c): no rules, no fingerprint binding here */
+u64 profile_resolve(const char *lib, const char *nid) { (void)lib, (void)nid; return 0; }
+void profile_bind(const u8 *fingerprint) { (void)fingerprint; }
 int host_find_module(const char *name, u32 *handle_out) { return -1; }
+#ifndef ENV_REAL_LOADER
 u64 call_gadget6(u64 fn, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) { return (u64)-1; }
+#endif
 void *host_dlsym(u32 handle, const char *name)
 {
     return strcmp(name, "sceKernelUsleep") == 0 ? (void *)HOST_USLEEP : NULL;
@@ -228,10 +235,6 @@ static void resolve_tests(void)
     expect(denied && ((s64(*)(void))denied)() == (s64)EXT_SELFTEST_STUB_RET,
            "no host fallback: the stub returns the library's error");
     expect(unresolved && ((s64(*)(void))unresolved)() == 0, "other unresolved imports return 0");
-    void *out = NULL;
-    expect(ext_dlsym(0x55, EXT_SELFTEST_NAME, &out) == 0 && (u64)out == fn, "dlsym finds the extension's function");
-    expect(ext_dlsym(0x77, "ghostldrExtMissing", &out) == -1, "dlsym refuses a no-host library's module");
-    expect(ext_dlsym(0x55, "ghostldrExtMissing", &out) == 1, "dlsym passes other modules to the host");
 }
 
 static void lookup_nids(const char *path)
@@ -251,7 +254,7 @@ static void lookup_nids(const char *path)
 
 int main(int argc, char **argv)
 {
-    if (argc < 5) {
+    if (argc < 4) {
         logf("usage: ext_host MODE EXT_BIN CRC SHA256|- [NID_FILE]");
         return 2;
     }
@@ -260,25 +263,21 @@ int main(int argc, char **argv)
     ctx.magic = BOOT_MAGIC;
     ctx.size = sizeof(ctx);
     ctx.ext_crc = sys_strtoul(argv[3]);
-    if (argv[4][0] == '-') {
-        /* an old payload: the context ends before the SHA-256 pin */
-        ctx.size = (u64)__builtin_offsetof(struct boot_ctx, ext_sha256);
-    } else {
-        for (int i = 0; i < 32; i++) {
-            const char *p = argv[4] + 2 * i;
-            u32 v = 0;
+    /* fork: argv[4] is the blob's SHA-256 hex (the pin run.py emits), or
+     * "-" for an old payload, whose ctx ends before the digest field */
+    if (argc > 4 && strcmp(argv[4], "-") != 0) {
+        for (int i = 0; i < 24; i++) {
+            unsigned v = 0;
             for (int k = 0; k < 2; k++) {
-                char ch = p[k];
-                v = v * 16 + (u32)(ch >= '0' && ch <= '9'   ? ch - '0'
-                                   : ch >= 'a' && ch <= 'f' ? ch - 'a' + 10
-                                   : ch >= 'A' && ch <= 'F' ? ch - 'A' + 10
-                                                            : 0);
+                char ch = argv[4][2 * i + k];
+                v = v * 16 + (unsigned)(ch >= 'a' ? ch - 'a' + 10 : ch >= 'A' ? ch - 'A' + 10 : ch - '0');
             }
             ctx.ext_sha256[i] = (u8)v;
         }
         if (strcmp(mode, "badsha") == 0)
-            ctx.ext_sha256[0] ^= 1;
-    }
+            ctx.ext_sha256[0] ^= 0xFF;
+    } else
+        ctx.size = __builtin_offsetof(struct boot_ctx, ext_sha256);
     g_ctx = &ctx;
     K.read = k_read;
     K.close = k_close;
@@ -290,8 +289,14 @@ int main(int argc, char **argv)
     char *blob;
     ctx.ext_size = (u64)sys_read_file(argv[2], &blob);
     ctx.ext_fd = (u64)sys_open(argv[2]);
-    /* 64 KiB of small area, as after a 192 KiB core image */
-    u64 small_size = strcmp(mode, "tiny") == 0 ? 0x8000 : 0x10000;
+    /* 64 KiB of small area, as after a 192 KiB core image.  An extension
+     * that needs more goes to a JIT block on the console ("tiny" tests
+     * that); the other modes grow the area so the small-area path stays
+     * tested whatever the extension's size. */
+    u64 need = ((const struct ext_blob *)blob)->image_memsz + 0x4000 /* ext.c STUB_AREA_KEEP */;
+    if (need > 0x10000)
+        logf("ext_host: the extension needs %lx bytes of small area, more than a console's 0x10000", need);
+    u64 small_size = strcmp(mode, "tiny") == 0 ? 0x8000 : need > 0x10000 ? ALIGN_UP(need, 0x4000) : 0x10000;
     g_small = sys_map(small_size);
     sys_protect(g_small, small_size, 0);
     g_small_cur = (u64)g_small, g_small_end = (u64)g_small + small_size;
@@ -299,6 +304,10 @@ int main(int argc, char **argv)
     if (strcmp(mode, "badcrc") == 0) {
         ctx.ext_crc ^= 1;
         expect(ext_fetch() != 0, "a wrong CRC is refused");
+        return g_failed;
+    }
+    if (strcmp(mode, "badsha") == 0) {
+        expect(ext_fetch() != 0, "a wrong SHA-256 is refused");
         return g_failed;
     }
     if (strcmp(mode, "short") == 0) {
@@ -314,14 +323,8 @@ int main(int argc, char **argv)
         expect(ext_fetch() != 0, "size 0 stops the boot");
         return g_failed;
     }
-    if (strcmp(mode, "badsha") == 0) {
-        expect(ext_fetch() != 0, "a wrong SHA-256 pin is refused");
-        return g_failed;
-    }
     if (strcmp(mode, "jit") == 0)
         ctx.flags |= CTX_FLAG_EXT_JIT;
-    if (strcmp(mode, "small") == 0)
-        ctx.flags |= CTX_FLAG_EXT_ARENA; /* the arena-first placement order */
 
     expect(ext_fetch() == 0, "fetch");
     expect((s64)ctx.ext_fd == -1, "socket consumed");
@@ -329,7 +332,9 @@ int main(int argc, char **argv)
     expect(!nid_to_name("1jfXLRVzis") && !nid_to_name("1jfXLRVziscc") && !nid_to_name("1jfXLRV!isc") && !nid_to_name("1jfXLRVzisd"),
            "malformed NIDs");
     expect(ext_start() == 0, "start (place, relocate, ext_init, self-test)");
-    bool want_jit = strcmp(mode, "small") != 0;
+    /* an image the small area cannot hold with 16 KiB left for stubs goes in a JIT block */
+    bool fits = ((const struct ext_blob *)blob)->image_memsz + 0x4000 <= small_size;
+    bool want_jit = strcmp(mode, "jit") == 0 || !fits;
     expect(g_jit_blocks == (want_jit ? 1u : 0u), want_jit ? "placed in a JIT block" : "placed in the small area");
     char self[12];
     compute_nid(EXT_SELFTEST_NAME, self);
@@ -345,14 +350,7 @@ int main(int argc, char **argv)
     if (argc > 5)
         lookup_nids(argv[5]);
     ext_boot_done();
-    /* fork: names looked up during boot are retained after the table is
-     * freed; names never used during boot are not */
-    expect(nid_to_name("1jfXLRVzisc") != NULL, "boot-used NID name retained after boot");
-    if (strcmp(mode, "resolve") != 0 && argc <= 5) {
-        char other[12];
-        compute_nid("sceKernelGetProcessId", other);
-        expect(nid_to_name(other) == NULL, "unused NID name not retained");
-    }
+    expect(nid_to_name("1jfXLRVzisc") == NULL, "NID table freed after boot");
     expect(g_flex_maps == g_flex_unmaps, "flexible memory returned");
     expect(ext_hle_lookup(EXT_SELFTEST_LIB, self, NULL) != 0, "extension HLE kept after boot");
     return g_failed;

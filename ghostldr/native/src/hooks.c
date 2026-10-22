@@ -1,5 +1,7 @@
 /*
- * Inline hooks on the title's own code (diagnostics).
+ * Inline hooks on the title's own code (diagnostics), written against Ghost
+ * of Tsushima 2.18's executable: only installed when its profile asks for
+ * them (ghost_hooks) and the eboot's fingerprint is that build's.
  *
  * The entry of a hooked function is overwritten in the text image (before it
  * is uploaded) with `jmp rel32` to a C hook; the displaced prologue moves to
@@ -44,7 +46,7 @@ u64 g_heap_live[3], g_heap_peak[3];
 static u32 heap_index(u64 heap)
 {
     u64 off = heap - g_main_mod->base;
-    return off == g_profile->heap_obj0 ? 0 : off == g_profile->heap_obj1 ? 1 : 2;
+    return off == 0x16b2930 ? 0 : off == 0x16b29f8 ? 1 : 2;
 }
 
 static void track_add(u64 ptr, u64 size, u32 h, u32 ra1, u32 ra2)
@@ -238,13 +240,8 @@ static struct hook k_hooks[] = {
 
 void hooks_patch_text(struct module *m, u8 *text)
 {
-    /* fork: the hooks below read Ghost's engine internals; they are only
-     * meaningful for a profile that carries the built-in hook set.  A
-     * host profile for another title leaves the title's text untouched. */
-    if (!profile_allows_builtin_hooks()) {
-        logf("hooks: skipped (active profile has no built-in hook set)");
+    if (!profile_has(PF_HOOKS))
         return;
-    }
     if (!g_track)
         g_track = page_alloc(TRACK_SLOTS * sizeof(*g_track));
     for (u32 i = 0; i < ARRAY_SIZE(k_hooks); i++) {

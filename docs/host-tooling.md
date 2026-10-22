@@ -1,7 +1,7 @@
 # Host tooling (fork additions)
 
-Three host-side tools on top of the stock release flow. All are
-read-only with respect to the console except where noted.
+Host-side tools on top of the stock release flow. All are read-only
+with respect to the console except where noted.
 
 ## `run.py doctor`
 
@@ -9,16 +9,17 @@ read-only with respect to the console except where noted.
 
 Checks the whole boot chain from this computer and prints one
 PASS / WARN / FAIL line per item: Python version, prebuilt core
-integrity (`core.bin` size vs `core.json`), Lua payload size against
-Luac0re's 500 KB cap, whether UDP 18194 / TCP 18195 are free (or
-already owned by the recorder), whether the console's Lua loader
-answers on 9026, and — when a dump and a name table are staged —
-the title's import coverage summary. Exit code 1 if anything FAILs.
-Doctor sends nothing to the console beyond a TCP connect probe.
+integrity (`core.bin` size vs `core.json`), selector presence, Lua
+payload size against Luac0re's 500 KB cap, whether UDP 18194 /
+TCP 18195 / TCP 18196 are free (or the log port is already owned by
+the recorder), whether the console's Lua loader answers on 9026,
+and — when a dump and a name table are staged — the title's import
+coverage summary. Exit code 1 if anything FAILs. Doctor sends
+nothing to the console beyond a TCP connect probe.
 
 ## Boot preflight gate
 
-`run.py boot` now runs `tools/import_report.py` over a staged
+`run.py boot` runs `tools/import_report.py` over a staged
 `build/ghost/app0` first (only when `build/nid/known_names.txt`
 also exists; on trees that cannot run the checker it prints
 "skipped" and boots as before). The summary line prints how the
@@ -43,29 +44,34 @@ title actually called, not by what it imports.
 
 ## Log hints
 
-When the core's extension fetch/start fails, it logs a terse
-`ext: ...` line and the boot stops. run.py's log listener now
-follows such lines with a `[hint]` line giving the plain-language
-cause and the fix (firewall on TCP 18195, core/ext build mismatch,
-corrupt blob, and so on).
+When the core's extension fetch fails, it logs a terse `ext: ...`
+line and the boot stops. run.py's log listener follows such lines
+with a `[hint]` line giving the plain-language cause and the fix
+(firewall on TCP 18195, core/ext build mismatch, corrupt blob,
+SHA-256 mismatch, and so on). The table is `EXT_HINTS` in run.py.
 
-## Core changes on the companion branch (`x0-fixes-core`)
+## Core change: SHA-256 pin for ext.bin
 
-Built on top of this branch; the native core changes there are:
+run.py hashes the blob (`GHOSTLDR_EXT_SHA256`), ghostldr.lua
+writes the digest's first 24 bytes into the boot context after
+the firmware field, and `ext_fetch` verifies them (new
+`src/sha256.c`) after the CRC-32 screen. 24 bytes — a 192-bit
+pin — is what the context has before the profile slot; CRC-32
+alone only proves the blob matches a header inside the same Lua
+payload, while the pin is a second, independent check of the
+bytes that are about to run as code. Payloads too old to carry
+the pin stay CRC-only; the receive log line says which check ran
+(`SHA-256 verified` / `no SHA-256 pin`). The selector blob keeps
+its stock CRC check.
 
-- **SHA-256 pin for ext.bin.** run.py hashes the blob
-  (`GHOSTLDR_EXT_SHA256`), ghostldr.lua writes the digest into the
-  boot context, and `ext_fetch` verifies it (new `src/sha256.c`)
-  after the CRC-32 screen. Contexts too old to carry the pin stay
-  CRC-only; the receive log line says which check ran.
-- **NID names survive boot.** Names `nid_to_name` resolves during
-  boot are retained in a compact table when the 2.2 MB blob is
-  freed at `ext_boot_done`, so runtime stub logs keep their names.
-  Names never used during boot still return NULL. GHOST_API_VERSION
-  is now 2 for the widened contract.
-- **Extension placement defaults to a JIT block.** The small RX
-  area capped the extension at ~48 KiB (32 KiB used) minus the
-  stub reserve; a fresh JIT block is now tried first, the arena is
-  the fallback, and `--ext-arena` forces the old order.
-- **Title profiles.** Per-title constants are data now — see
-  [title-profiles.md](title-profiles.md).
+## Merge policy with upstream
+
+This fork tracks upstream's main and keeps only what upstream does
+not have. The first core branch also carried title profiles, NID
+name retention, and a placement flip; when upstream shipped the
+selector update it brought its own profiles (`host/profiles.py`,
+`native/src/profile.c`), its own retention (`nid_keep`), and an
+evolved arena — so those three were dropped in the merge rather
+than forked twice. What remains fork-only is this page: doctor,
+the preflight gate, stub_report, the log hints, and the SHA-256
+pin.
