@@ -11,6 +11,11 @@
 --                       NID table): run.py serves it over TCP on the log IP;
 --                       size 0 = none.  This script only connects the socket:
 --                       the core reads the blob itself and checks size and CRC.
+--   GHOSTLDR_EXT_SHA256 (fork) hex digest of the same blob; written into the
+--                       context as raw bytes, the core's integrity pin.
+--   GHOSTLDR_PROFILE    (fork, optional) a title profile as 48 u64 words
+--                       (tools/title_profile.py); written to fresh memory
+--                       whose address/length go in the context.
 
 local function fail(msg)
     send_notification("ghostldr: " .. msg)
@@ -119,7 +124,7 @@ local fields = {
 local ctx = malloc(0x200)
 for i = 0, 0x1F8, 8 do write64(ctx + i, 0) end
 for i, v in ipairs(fields) do write64(ctx + (i - 1) * 8, v) end
-write64(ctx + 8, #fields * 8 + 8 * 8 + 3 * 8)    -- fields, reserved[8], ext_fd/size/crc
+write64(ctx + 8, #fields * 8 + 8 * 8 + 3 * 8 + 32 + 2 * 8)    -- fields, reserved[8], ext_fd/size/crc, sha256[32], profile ptr/len
 local app_root = malloc(#GHOSTLDR_APP_ROOT + 1)
 write_string(app_root, GHOSTLDR_APP_ROOT)
 write64(ctx + (#fields - 2) * 8, app_root)
@@ -134,6 +139,15 @@ write64(ctx + #fields * 8 + 0x38, GHOSTLDR_CPU_HEAP_MIB or 0)
 write64(ctx + #fields * 8 + 0x40, ext_fd)
 write64(ctx + #fields * 8 + 0x48, GHOSTLDR_EXT_SIZE or 0)
 write64(ctx + #fields * 8 + 0x50, GHOSTLDR_EXT_CRC or 0)
+if GHOSTLDR_EXT_SHA256 then
+    write_buffer(ctx + #fields * 8 + 0x58, hex_to_binary(GHOSTLDR_EXT_SHA256))
+end
+if GHOSTLDR_PROFILE then
+    local prof = malloc(#GHOSTLDR_PROFILE * 8)
+    for i, v in ipairs(GHOSTLDR_PROFILE) do write64(prof + (i - 1) * 8, v) end
+    write64(ctx + #fields * 8 + 0x78, prof)
+    write64(ctx + #fields * 8 + 0x80, #GHOSTLDR_PROFILE * 8)
+end
 
 send_notification(string.format("ghostldr: core at %x, calling", rx))
 local ret = func_wrap(rx)(ctx)

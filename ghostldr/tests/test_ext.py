@@ -9,6 +9,7 @@ name lists, check_ext.py passes, and run.py serves it.  Needs
 
 from __future__ import annotations
 
+import hashlib
 import os
 import platform
 import shutil
@@ -49,6 +50,7 @@ class ExtensionOnHost(unittest.TestCase):
             raise unittest.SkipTest("no way to build and run x86-64 code here")
         cls.blob = EXT.read_bytes()
         cls.crc = hex(zlib.crc32(cls.blob))
+        cls.sha = hashlib.sha256(cls.blob).hexdigest()
         abi, = struct.unpack_from("<I", cls.blob, 20)
         cls.tmp = tempfile.TemporaryDirectory()
         out = Path(cls.tmp.name) / "ext_host"
@@ -56,7 +58,7 @@ class ExtensionOnHost(unittest.TestCase):
                  f"-I{ROOT / 'ghostldr/native/include'}", f"-DGHOST_ABI={abi}u"]
         objs = []
         core = ROOT / "ghostldr/native/src"
-        sources = [(core / f"{name}.c", flags) for name in ("ext", "resolve", "elf", "nid")]
+        sources = [(core / f"{name}.c", flags) for name in ("ext", "resolve", "elf", "nid", "sha256")]
         for src, extra in sources + [(HERE / "ext_host/env.c", flags), (HERE / "ext_host/sys.c", ["-O1"])]:
             obj = Path(cls.tmp.name) / (src.stem + ".o")
             subprocess.run(cc + extra + ["-c", str(src), "-o", str(obj)], check=True)
@@ -68,8 +70,9 @@ class ExtensionOnHost(unittest.TestCase):
     def tearDownClass(cls) -> None:
         cls.tmp.cleanup()
 
-    def run_host(self, mode: str, *extra: str) -> str:
-        p = subprocess.run([str(self.host), mode, str(EXT), self.crc, *extra], capture_output=True, text=True)
+    def run_host(self, mode: str, *extra: str, sha: bool = True) -> str:
+        p = subprocess.run([str(self.host), mode, str(EXT), self.crc, self.sha if sha else "-", *extra],
+                           capture_output=True, text=True)
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         self.assertNotIn("FAILED", p.stdout)
         return p.stdout
@@ -78,6 +81,7 @@ class ExtensionOnHost(unittest.TestCase):
         out = self.run_host("small")
         self.assertIn("into flexible memory", out)
         self.assertIn("in the small RX area", out)
+        self.assertIn("SHA-256 verified", out)
         self.assertIn("ext: self-test ok", out)
 
     def test_loads_in_a_jit_block(self) -> None:
@@ -97,8 +101,14 @@ class ExtensionOnHost(unittest.TestCase):
 
     def test_refuses_a_bad_transfer_before_touching_anything(self) -> None:
         self.assertIn("is corrupt", self.run_host("badcrc"))
+        self.assertIn("SHA-256 mismatch", self.run_host("badsha"))
         self.assertIn("receive failed", self.run_host("short"))
         self.assertIn("boot stops here", self.run_host("nosock"))
+
+    def test_old_payload_without_a_pin_still_boots(self) -> None:
+        out = self.run_host("small", sha=False)
+        self.assertIn("no SHA-256 pin", out)
+        self.assertIn("ext: self-test ok", out)
 
     def test_nid_table_matches_the_name_lists(self) -> None:
         import gen_nids

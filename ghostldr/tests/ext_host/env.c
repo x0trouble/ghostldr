@@ -251,8 +251,8 @@ static void lookup_nids(const char *path)
 
 int main(int argc, char **argv)
 {
-    if (argc < 4) {
-        logf("usage: ext_host MODE EXT_BIN CRC [NID_FILE]");
+    if (argc < 5) {
+        logf("usage: ext_host MODE EXT_BIN CRC SHA256|- [NID_FILE]");
         return 2;
     }
     const char *mode = argv[1];
@@ -260,6 +260,25 @@ int main(int argc, char **argv)
     ctx.magic = BOOT_MAGIC;
     ctx.size = sizeof(ctx);
     ctx.ext_crc = sys_strtoul(argv[3]);
+    if (argv[4][0] == '-') {
+        /* an old payload: the context ends before the SHA-256 pin */
+        ctx.size = (u64)__builtin_offsetof(struct boot_ctx, ext_sha256);
+    } else {
+        for (int i = 0; i < 32; i++) {
+            const char *p = argv[4] + 2 * i;
+            u32 v = 0;
+            for (int k = 0; k < 2; k++) {
+                char ch = p[k];
+                v = v * 16 + (u32)(ch >= '0' && ch <= '9'   ? ch - '0'
+                                   : ch >= 'a' && ch <= 'f' ? ch - 'a' + 10
+                                   : ch >= 'A' && ch <= 'F' ? ch - 'A' + 10
+                                                            : 0);
+            }
+            ctx.ext_sha256[i] = (u8)v;
+        }
+        if (strcmp(mode, "badsha") == 0)
+            ctx.ext_sha256[0] ^= 1;
+    }
     g_ctx = &ctx;
     K.read = k_read;
     K.close = k_close;
@@ -295,8 +314,14 @@ int main(int argc, char **argv)
         expect(ext_fetch() != 0, "size 0 stops the boot");
         return g_failed;
     }
+    if (strcmp(mode, "badsha") == 0) {
+        expect(ext_fetch() != 0, "a wrong SHA-256 pin is refused");
+        return g_failed;
+    }
     if (strcmp(mode, "jit") == 0)
         ctx.flags |= CTX_FLAG_EXT_JIT;
+    if (strcmp(mode, "small") == 0)
+        ctx.flags |= CTX_FLAG_EXT_ARENA; /* the arena-first placement order */
 
     expect(ext_fetch() == 0, "fetch");
     expect((s64)ctx.ext_fd == -1, "socket consumed");
@@ -304,7 +329,7 @@ int main(int argc, char **argv)
     expect(!nid_to_name("1jfXLRVzis") && !nid_to_name("1jfXLRVziscc") && !nid_to_name("1jfXLRV!isc") && !nid_to_name("1jfXLRVzisd"),
            "malformed NIDs");
     expect(ext_start() == 0, "start (place, relocate, ext_init, self-test)");
-    bool want_jit = strcmp(mode, "jit") == 0 || strcmp(mode, "tiny") == 0;
+    bool want_jit = strcmp(mode, "small") != 0;
     expect(g_jit_blocks == (want_jit ? 1u : 0u), want_jit ? "placed in a JIT block" : "placed in the small area");
     char self[12];
     compute_nid(EXT_SELFTEST_NAME, self);
@@ -317,10 +342,17 @@ int main(int argc, char **argv)
     expect(pol && (pol->flags & EXT_LIB_NO_HOST) && !ext_lib_policy("libkernel"), "library policy by alias");
     if (strcmp(mode, "resolve") == 0)
         resolve_tests();
-    if (argc > 4)
-        lookup_nids(argv[4]);
+    if (argc > 5)
+        lookup_nids(argv[5]);
     ext_boot_done();
-    expect(nid_to_name("1jfXLRVzisc") == NULL, "NID table freed after boot");
+    /* fork: names looked up during boot are retained after the table is
+     * freed; names never used during boot are not */
+    expect(nid_to_name("1jfXLRVzisc") != NULL, "boot-used NID name retained after boot");
+    if (strcmp(mode, "resolve") != 0 && argc <= 5) {
+        char other[12];
+        compute_nid("sceKernelGetProcessId", other);
+        expect(nid_to_name(other) == NULL, "unused NID name not retained");
+    }
     expect(g_flex_maps == g_flex_unmaps, "flexible memory returned");
     expect(ext_hle_lookup(EXT_SELFTEST_LIB, self, NULL) != 0, "extension HLE kept after boot");
     return g_failed;

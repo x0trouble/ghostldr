@@ -12,16 +12,20 @@
  *   ext_start      after the title's modules are placed, before relocation:
  *                  put the code in executable memory, relocate it, call
  *                  ext_init(&g_ghost_api) and run its self-test.
- *   ext_boot_done  after relocation: free the blob (NID table and image
- *                  copy).  The extension's code and data stay.
+ *   ext_boot_done  after relocation: free the blob, retaining the NID
+ *                  names that were actually looked up during boot in a
+ *                  compact table (fork), so runtime stub logs and the
+ *                  extension's own nid_to_name keep working afterwards.
  *
- * Placement: the code goes at the top of the small RX area after the core
- * (arena.c), written through the compiler like module text, and its data
- * pages right after it are punched RW like module data.  When that area
- * cannot hold it (keeping room for stubs), or with ctx flag
- * CTX_FLAG_EXT_JIT, a new JIT block from the compiler process holds it.
- * Placing it after the title's modules means a kernel-chosen JIT address
- * cannot fall where module placement later punches memory.
+ * Placement: a new JIT block from the compiler process holds the code
+ * (fork: the default since this branch; it used to be the fallback).
+ * When no JIT block can be created, or with ctx flag
+ * CTX_FLAG_EXT_ARENA, the code goes at the top of the small RX area
+ * after the core (arena.c), written through the compiler like module
+ * text, and its data pages right after it are punched RW like module
+ * data.  Placing it after the title's modules means a kernel-chosen
+ * JIT address cannot fall where module placement later punches
+ * memory.
  */
 #include "ghost_api.h"
 
@@ -41,6 +45,141 @@ static const char *g_nid_str;
 static u32 g_nid_count;
 static const struct ext_exports *g_exp;
 static u32 g_ext_hits;
+
+/* fork: NID name retention.  The blob (and its ~42,000-name table) is
+ * freed at ext_boot_done, after which nid_to_name used to return NULL
+ * for everything and runtime stub logs lost their names.  Instead,
+ * every key nid_to_name resolves while the blob is alive is marked
+ * here, and ext_boot_done builds a compact table of just the marked
+ * entries (keys, name offsets, packed strings) before freeing.  The
+ * marked set is bounded by what the title actually imports and calls
+ * during boot — a few thousand entries, ~5% of the full table.  A
+ * lookup after boot for a name never used during boot still returns
+ * NULL, exactly as before; nothing retained can be wrong, only absent. */
+#define NID_MARK_MAX 65536
+static u64 *g_mark;
+static u32 g_mark_count;
+static u8 *g_retained;
+static u64 g_retained_size;
+
+static void nid_mark(u64 key)
+{
+    if (!g_mark) {
+        g_mark = page_alloc(NID_MARK_MAX * sizeof(u64));
+        if (!g_mark)
+            return;
+    }
+    if (g_mark_count < NID_MARK_MAX)
+        g_mark[g_mark_count++] = key;
+}
+
+static void u64_sort(u64 *a, u64 *tmp, u32 n)
+{
+    /* bottom-up merge sort; tmp is scratch the caller frees */
+    for (u32 width = 1; width < n; width *= 2) {
+        for (u32 lo = 0; lo < n; lo += 2 * width) {
+            u32 mid = lo + width < n ? lo + width : n;
+            u32 hi = lo + 2 * width < n ? lo + 2 * width : n;
+            u32 i = lo, j = mid, k = lo;
+            while (i < mid && j < hi)
+                tmp[k++] = a[i] <= a[j] ? a[i++] : a[j++];
+            while (i < mid)
+                tmp[k++] = a[i++];
+            while (j < hi)
+                tmp[k++] = a[j++];
+        }
+        for (u32 i = 0; i < n; i++)
+            a[i] = tmp[i];
+    }
+}
+
+static void u64_sort_slow(u64 *a, u32 n)
+{
+    for (u32 i = 1; i < n; i++) {
+        u64 v = a[i];
+        u32 j = i;
+        while (j && a[j - 1] > v) {
+            a[j] = a[j - 1];
+            j--;
+        }
+        a[j] = v;
+    }
+}
+
+/* Build the retained table from the marked keys; returns the number of
+ * names kept.  Runs while the blob table is still live. */
+static u32 nid_retain(void)
+{
+    if (!g_mark_count || !g_nid_keys)
+        return 0;
+    u64 *tmp = page_alloc((u64)g_mark_count * sizeof(u64));
+    if (tmp) {
+        u64_sort(g_mark, tmp, g_mark_count);
+        page_free(tmp, (u64)g_mark_count * sizeof(u64));
+    } else {
+        u64_sort_slow(g_mark, g_mark_count);
+    }
+    /* dedupe in place */
+    u32 m = 0;
+    for (u32 i = 0; i < g_mark_count; i++)
+        if (!m || g_mark[i] != g_mark[m - 1])
+            g_mark[m++] = g_mark[i];
+    /* count the marked entries present in the table, and their string bytes */
+    u32 keep = 0;
+    u64 str_bytes = 0;
+    u32 j = 0;
+    for (u32 i = 0; i < g_nid_count && j < m; i++) {
+        while (j < m && g_mark[j] < g_nid_keys[i])
+            j++;
+        if (j < m && g_mark[j] == g_nid_keys[i]) {
+            keep++;
+            const char *s = g_nid_str + g_nid_names[i];
+            u64 len = 0;
+            while (s[len])
+                len++;
+            str_bytes += len + 1;
+        }
+    }
+    if (!keep)
+        return 0;
+    u64 size = (u64)keep * 12 + str_bytes;
+    u8 *blk = page_alloc(size);
+    if (!blk)
+        return 0;
+    u64 *keys = (u64 *)blk;
+    u32 *names = (u32 *)(blk + (u64)keep * 8);
+    char *strs = (char *)(blk + (u64)keep * 12);
+    u32 out = 0;
+    u64 soff = 0;
+    j = 0;
+    for (u32 i = 0; i < g_nid_count && j < m; i++) {
+        while (j < m && g_mark[j] < g_nid_keys[i])
+            j++;
+        if (j < m && g_mark[j] == g_nid_keys[i]) {
+            const char *s = g_nid_str + g_nid_names[i];
+            u64 len = 0;
+            while (s[len])
+                len++;
+            keys[out] = g_nid_keys[i];
+            names[out] = (u32)soff;
+            for (u64 k = 0; k <= len; k++)
+                strs[soff + k] = s[k];
+            soff += len + 1;
+            out++;
+        }
+    }
+    g_retained = blk;
+    g_retained_size = size;
+    /* park the table here; ext_boot_done repoints the globals after
+     * ext_release() clears them */
+    g_nid_keys = keys, g_nid_names = names, g_nid_str = strs, g_nid_count = keep;
+    return keep;
+}
+
+static u32 be32(const u8 *p)
+{
+    return (u32)p[0] << 24 | (u32)p[1] << 16 | (u32)p[2] << 8 | (u32)p[3];
+}
 
 static u32 crc32(const u8 *p, u64 n)
 {
@@ -93,8 +232,11 @@ const char *nid_to_name(const char *nid)
     u32 lo = 0, hi = g_nid_count;
     while (lo < hi) {
         u32 mid = lo + (hi - lo) / 2;
-        if (g_nid_keys[mid] == key)
+        if (g_nid_keys[mid] == key) {
+            if (g_blob)
+                nid_mark(key); /* boot-time lookup: retain this name */
             return g_nid_str + g_nid_names[mid];
+        }
         if (g_nid_keys[mid] < key)
             lo = mid + 1;
         else
@@ -221,13 +363,29 @@ int ext_fetch(void)
         ext_release();
         return -1;
     }
+    /* fork: the SHA-256 pin.  The CRC above is a corruption screen; the
+     * pin is the integrity check, and it travels in the same trusted Lua
+     * payload as the core itself.  Contexts too old to carry it stay
+     * CRC-only, and the receive line below says which ran. */
+    bool pinned = c->size >= __builtin_offsetof(struct boot_ctx, ext_sha256) + 32;
+    if (pinned) {
+        u8 digest[32];
+        sha256(g_blob, size, digest);
+        if (memcmp(digest, c->ext_sha256, 32) != 0) {
+            logf("ext: SHA-256 mismatch (computed %08x%08x..., pinned %08x%08x...): the blob is not "
+                 "the one run.py hashed",
+                 be32(digest), be32(digest + 4), be32(c->ext_sha256), be32(c->ext_sha256 + 4));
+            ext_release();
+            return -1;
+        }
+    }
     if (ext_validate() != 0) {
         ext_release();
         return -1;
     }
-    logf("ext: received %lu bytes (CRC %08x) into %s memory: code %x bytes (text %x), %u relocations, %u NIDs",
-         size, crc, g_blob_flex ? "flexible" : "direct", g_hdr->image_memsz, g_hdr->text_size, g_hdr->reloc_count,
-         g_nid_count);
+    logf("ext: received %lu bytes (CRC %08x, %s) into %s memory: code %x bytes (text %x), %u relocations, %u NIDs",
+         size, crc, pinned ? "SHA-256 verified" : "no SHA-256 pin", g_blob_flex ? "flexible" : "direct",
+         g_hdr->image_memsz, g_hdr->text_size, g_hdr->reloc_count, g_nid_count);
     return 0;
 }
 
@@ -301,12 +459,18 @@ int ext_start(void)
         return -1;
     u64 total = h->image_memsz, data_size = total - h->text_size;
     struct jit_block jb;
-    bool want_jit = (g_ctx->flags & CTX_FLAG_EXT_JIT) != 0, jit = false;
-    u64 base = want_jit ? 0 : arena_small_alloc_top(total, STUB_AREA_KEEP);
+    /* fork: a JIT block is the default placement now — the small RX area
+     * capped the extension at what fits beside the core (48 KiB, 32 KiB
+     * used) minus the stub reserve.  The arena stays as the fallback, or
+     * as the first choice with CTX_FLAG_EXT_ARENA (run.py --ext-arena),
+     * the pre-flip order.  CTX_FLAG_EXT_JIT is still accepted and now
+     * simply names the default. */
+    bool arena_first = (g_ctx->flags & CTX_FLAG_EXT_ARENA) != 0, jit = false;
+    u64 base = arena_first ? arena_small_alloc_top(total, STUB_AREA_KEEP) : 0;
     if (!base) {
         if (jit_block_create(&jb, total, 0) == 0)
             base = jb.rx, jit = true;
-        else if (want_jit && (base = arena_small_alloc_top(total, STUB_AREA_KEEP)))
+        else if (!arena_first && (base = arena_small_alloc_top(total, STUB_AREA_KEEP)))
             logf("ext: no new JIT block; using the small RX area");
         if (!base) {
             logf("ext: no executable memory for %lx bytes", total);
@@ -351,6 +515,25 @@ int ext_start(void)
 
 void ext_boot_done(void)
 {
-    logf("ext: %u imports bound to the extension; NID table freed (%lu KiB)", g_ext_hits, g_blob_size >> 10);
+    /* fork: build the retained name table while the blob is still live,
+     * then free the blob and repoint the lookup globals at the copy */
+    const u64 *keys = NULL;
+    const u32 *names = NULL;
+    const char *str = NULL;
+    u32 count = 0;
+    u32 kept = nid_retain();
+    if (kept) {
+        keys = g_nid_keys, names = g_nid_names, str = g_nid_str, count = g_nid_count;
+    }
+    logf("ext: %u imports bound to the extension; NID table freed (%lu KiB), %u boot names retained "
+         "(%lu KiB)",
+         g_ext_hits, g_blob_size >> 10, kept, g_retained_size >> 10);
     ext_release();
+    if (kept) {
+        g_nid_keys = keys, g_nid_names = names, g_nid_str = str, g_nid_count = count;
+    }
+    if (g_mark) {
+        page_free(g_mark, NID_MARK_MAX * sizeof(u64));
+        g_mark = NULL, g_mark_count = 0;
+    }
 }

@@ -52,6 +52,7 @@ int ghost_boot(void)
      * stop before anything touches the title or SWRR's state */
     if (ext_fetch() != 0)
         return -7;
+    profile_select(); /* fork: per-title constants, before any module loads */
     if (strcmp(root, "ghostfs") == 0) {
         /* the title's files live in SWRR save containers (no kernel exploit) */
         if (gfs_init() != 0)

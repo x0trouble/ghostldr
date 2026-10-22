@@ -20,6 +20,7 @@ build/ghostldr/preflight.md.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import socket
@@ -41,6 +42,8 @@ LOG_PORT = 18194
 EXT_PORT = LOG_PORT + 1   # TCP
 LUA_MAX = 500 * 1024      # Luac0re's remote Lua loader reads at most this much
 NAMES = ROOT / "build/nid/known_names.txt"
+sys.path.insert(0, str(ROOT / "ghostldr/tools"))
+import title_profile  # noqa: E402  (tools/title_profile.py: title profile encoder)
 
 # Plain-language causes for the core's extension failure lines
 # (native/src/ext.c). A boot that dies in ext_fetch/ext_start logs one
@@ -97,7 +100,8 @@ def build_core() -> None:
         raise SystemExit(f"building the core failed: {e}{hint}")
 
 
-def build_payload(flags: int, log_ip: str, app_root: str, knobs: dict[str, int], ext: bytes = b"") -> bytes:
+def build_payload(flags: int, log_ip: str, app_root: str, knobs: dict[str, int], ext: bytes = b"",
+                  profile_words: list[int] | None = None) -> bytes:
     core = CORE.read_bytes()
     layout = json.loads(LAYOUT.read_text())
     text_size = (layout["__text_end"] + 0x3FFF) & ~0x3FFF
@@ -114,6 +118,11 @@ def build_payload(flags: int, log_ip: str, app_root: str, knobs: dict[str, int],
         f"GHOSTLDR_EXT_PORT = {EXT_PORT}",
         f"GHOSTLDR_EXT_SIZE = {len(ext)}",
         f"GHOSTLDR_EXT_CRC = {zlib.crc32(ext):#x}",
+        # the SHA-256 pin the core verifies the fetched blob against;
+        # CRC-32 stays as the corruption screen (fork)
+        *([f'GHOSTLDR_EXT_SHA256 = "{hashlib.sha256(ext).hexdigest()}"'] if ext else []),
+        *([f"GHOSTLDR_PROFILE = {{{', '.join(f'{v:#x}' for v in profile_words)}}}"]
+          if profile_words else []),
         *[f"GHOSTLDR_{k.upper()}_MIB = {v}" for k, v in knobs.items()],
         "",
     ])
@@ -361,7 +370,11 @@ def main() -> int:
     parser.add_argument("--force-title-ready", action="store_true",
                         help="experiment: set the title world's ready flag from the watchdog")
     parser.add_argument("--ext-jit", action="store_true",
-                        help="test: put the extension's code in a new JIT block instead of the core's RX area")
+                        help="put the extension's code in a new JIT block (now the default; kept for compatibility)")
+    parser.add_argument("--ext-arena", action="store_true",
+                        help="force the extension into the core's small RX area first (the pre-fork placement order)")
+    parser.add_argument("--title-profile", type=Path, default=None,
+                        help="title profile JSON (titles/<id>.json): per-title planner tables, pool sizes and hook gating sent with the boot")
     parser.add_argument("--force-preflight", action="store_true",
                         help="boot even if the preflight coverage check finds unresolved imports")
     parser.add_argument("--host", default=None, help="console address (default: looked up by host-id)")
@@ -394,15 +407,22 @@ def main() -> int:
         flags = (1 if args.mode == "probe" else 0) | (2 if release else 0) | (4 if args.snap or args.count_imports or args.profile else 0) \
             | (16 if args.profile else 0) \
             | (8 if args.count_imports else 0) | (32 if args.force_title_ready else 0) \
-            | (64 if args.ext_jit else 0)
+            | (64 if args.ext_jit else 0) | (128 if args.ext_arena else 0)
         knobs = {"gpu_heap": args.gpu_heap_mib, "slack": args.slack_mib, "pool1": args.pool1_mib,
                  "cpu_heap": args.cpu_heap_mib}
+        profile_words = None
+        if args.title_profile:
+            try:
+                profile_words = title_profile.load_words(args.title_profile)
+            except (OSError, ValueError, KeyError) as e:
+                raise SystemExit(f"title profile {args.title_profile}: {e}")
+            print(f"title profile: {args.title_profile} ({len(profile_words)} words)", flush=True)
         ext = EXT.read_bytes() if args.mode == "boot" else b""
         if ext:
             ext_server = ExtServer(ext)
             ext_server.start()
             print(f"serving the extension ({len(ext)} bytes) on TCP {EXT_PORT}", flush=True)
-        payload = build_payload(flags, local_ip_for(args.host), args.app_root, knobs, ext)
+        payload = build_payload(flags, local_ip_for(args.host), args.app_root, knobs, ext, profile_words)
         print(f"sending {len(payload)} bytes of Lua to {args.host}:9026", flush=True)
         send_lua(args.host, payload)
         if ext and not ext_server.sent.wait(60):

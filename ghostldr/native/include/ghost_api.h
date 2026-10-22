@@ -17,7 +17,7 @@
 #pragma once
 #include "ghost.h"
 
-#define GHOST_API_VERSION 1
+#define GHOST_API_VERSION 2 /* 2 (fork): nid_to_name keeps boot-used names after the table is freed */
 #ifndef GHOST_ABI
 #define GHOST_ABI 0u /* the Makefile passes the headers' checksum */
 #endif
@@ -45,8 +45,10 @@ struct ghost_api {
     int (*host_find_module)(const char *name, u32 *handle_out);
     u64 (*call_gadget6)(u64 fn, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6);
 
-    /* NIDs.  nid_to_name works only during boot (it returns NULL once the
-     * title's imports are resolved and the table is freed). */
+    /* NIDs.  nid_to_name resolves any name while the boot table is live;
+     * after ext_boot_done it keeps resolving the names that were looked
+     * up during boot (the retained subset, ext.c) and returns NULL for
+     * the rest. */
     const char *(*nid_to_name)(const char *nid);
     void (*compute_nid)(const char *name, char out[12]);
 

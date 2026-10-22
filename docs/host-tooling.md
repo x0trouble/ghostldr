@@ -48,3 +48,24 @@ When the core's extension fetch/start fails, it logs a terse
 follows such lines with a `[hint]` line giving the plain-language
 cause and the fix (firewall on TCP 18195, core/ext build mismatch,
 corrupt blob, and so on).
+
+## Core changes on the companion branch (`x0-fixes-core`)
+
+Built on top of this branch; the native core changes there are:
+
+- **SHA-256 pin for ext.bin.** run.py hashes the blob
+  (`GHOSTLDR_EXT_SHA256`), ghostldr.lua writes the digest into the
+  boot context, and `ext_fetch` verifies it (new `src/sha256.c`)
+  after the CRC-32 screen. Contexts too old to carry the pin stay
+  CRC-only; the receive log line says which check ran.
+- **NID names survive boot.** Names `nid_to_name` resolves during
+  boot are retained in a compact table when the 2.2 MB blob is
+  freed at `ext_boot_done`, so runtime stub logs keep their names.
+  Names never used during boot still return NULL. GHOST_API_VERSION
+  is now 2 for the widened contract.
+- **Extension placement defaults to a JIT block.** The small RX
+  area capped the extension at ~48 KiB (32 KiB used) minus the
+  stub reserve; a fresh JIT block is now tried first, the arena is
+  the fallback, and `--ext-arena` forces the old order.
+- **Title profiles.** Per-title constants are data now — see
+  [title-profiles.md](title-profiles.md).

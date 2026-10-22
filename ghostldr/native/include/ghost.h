@@ -64,6 +64,16 @@ struct boot_ctx {
     /* runtime extension (ext.c): a TCP socket connected to run.py's extension
      * server (-1: none), and the blob's size and CRC-32 */
     u64 ext_fd, ext_size, ext_crc;
+    /* appended (fork): the blob's SHA-256, the integrity pin ext_fetch
+     * verifies when the context is large enough to carry it; older
+     * payloads leave the boot CRC-only.  Written by ghostldr.lua as raw
+     * digest bytes. */
+    u8 ext_sha256[32];
+    /* appended (fork): a host-supplied title profile (profile.c): a flat
+     * u64 array in guest memory, PROFILE_WORDS entries; 0 = the built-in
+     * profile.  profile_ptr is a guest address, profile_len its size in
+     * bytes. */
+    u64 profile_ptr, profile_len;
 };
 
 /* ---- runtime (rt.c) ---- */
@@ -317,7 +327,7 @@ u64 module_export(struct module *m, const char *nid);
 const char *module_sym_name(struct module *m, const struct elf_sym *s);
 
 /* ---- resolution (resolve.c, nid.c) ---- */
-const char *nid_to_name(const char *nid); /* ext.c: the extension's table, until ext_boot_done */
+const char *nid_to_name(const char *nid); /* ext.c: the extension's table; boot-used names survive ext_boot_done */
 void compute_nid(const char *name, char out[12]);
 u64 resolve_import(struct module *m, const char *encoded, bool weak, bool plt_func);
 u64 stub_alloc_code(const u8 *code, u32 len);
@@ -345,10 +355,52 @@ int arena_write(u64 dst, const void *src, u64 size);
 int arena_punch_rw(u64 addr, u64 size);
 
 /* ---- runtime extension (ext.c; interface in ghost_api.h) ---- */
-#define CTX_FLAG_EXT_JIT 64 /* place the extension in a new JIT block (run.py --ext-jit) */
+#define CTX_FLAG_EXT_JIT 64 /* place the extension in a new JIT block (run.py --ext-jit; now the default) */
+#define CTX_FLAG_EXT_ARENA 128 /* fork: force the small RX area first, the pre-flip placement order */
 int ext_fetch(void);     /* receive and verify ext.bin (the NID table lives there) */
 int ext_start(void);     /* place, relocate and initialize its code */
-void ext_boot_done(void); /* imports resolved: free the blob */
+void ext_boot_done(void); /* imports resolved: free the blob (names looked up during boot are retained) */
+void sha256(const u8 *data, u64 len, u8 out[32]); /* sha256.c */
+
+/* ---- title profiles (profile.c; fork) ----
+ * Everything per-title in budget.c and hooks.c (planner table offsets,
+ * pool sizes, lazy-backing sites, heap object offsets) lives in one
+ * struct.  The built-in profile is Ghost of Tsushima CUSA11456 v2.18,
+ * byte-for-byte the constants the code shipped with.  run.py can send
+ * another title's profile as a flat u64 array (tools/title_profile.py
+ * encodes titles/<id>.json); profile_select() validates and adopts it
+ * before any module is loaded. */
+#define PROFILE_MAGIC 0x4750524F46303031ULL /* "GPROF001" */
+#define PROFILE_VERSION 1
+#define PROFILE_WORDS 48
+#define PROFILE_FLAG_BUILTIN_HOOKS 1 /* the compiled-in diagnostic hooks fit this title */
+#define PROFILE_MAX_KNOBS 4
+#define PROFILE_MAX_LAZY 8
+
+struct profile_knob {
+    u64 table;       /* eboot offset of the mode table */
+    u32 reserved_idx; /* boot_ctx knob slot (4..7) */
+    u32 name_id;      /* index into profile.c's knob names */
+    u64 default_mib;  /* used when the knob slot is 0 (0 = leave alone) */
+};
+
+struct title_profile {
+    u64 tag; /* title id packed into 8 bytes, e.g. "CUSA1145" */
+    u32 flags;
+    u32 n_knobs;
+    struct profile_knob knobs[PROFILE_MAX_KNOBS];
+    u64 stream_tbl;
+    u64 stream_pool[6];
+    u64 fixed_mib, remainder_mib, slack_mib;
+    u64 lazy_total_mib, lazy_reserve_mib, movie_reserve_mib, min_pool_mib;
+    u32 n_lazy;
+    u64 lazy_sites[PROFILE_MAX_LAZY];
+    u64 heap_obj0, heap_obj1; /* hooks.c heap accounting object offsets */
+};
+
+extern const struct title_profile *g_profile;
+void profile_select(void); /* ghost_boot: adopt the ctx profile or keep the built-in */
+bool profile_allows_builtin_hooks(void);
 u64 ext_hle_lookup(const char *lib, const char *nid, const char *name);
 const struct ext_lib *ext_lib_policy(const char *lib);
 int ext_dlsym(u32 handle, const char *name, void **out);
