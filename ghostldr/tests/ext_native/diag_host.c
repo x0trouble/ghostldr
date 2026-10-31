@@ -24,14 +24,21 @@ int mkdir(const char *path, unsigned short mode);
 int rename(const char *from, const char *to);
 int unlink(const char *path);
 int fsync(int fd);
-int stat(const char *path, void *st);
+/* x86_64 macOS keeps the old 32-bit-inode stat and readdir under the plain names; its
+ * headers pick the 64-bit ones (the layouts read below), as on arm64, by these names */
+#if defined(__APPLE__) && defined(__x86_64__)
+#define INODE64(name) __asm("_" #name "$INODE64")
+#else
+#define INODE64(name)
+#endif
+int stat(const char *path, void *st) INODE64(stat);
 int vsnprintf(char *buf, unsigned long size, const char *fmt, __builtin_va_list ap);
 int printf(const char *fmt, ...);
 void *calloc(unsigned long n, unsigned long size);
 void free(void *p);
 void exit(int code);
-void *opendir(const char *path);
-void *readdir(void *d);
+void *opendir(const char *path) INODE64(opendir);
+void *readdir(void *d) INODE64(readdir);
 int closedir(void *d);
 int usleep(unsigned us);
 int pthread_create(u64 *thr, const void *attr, void *(*fn)(void *), void *arg);

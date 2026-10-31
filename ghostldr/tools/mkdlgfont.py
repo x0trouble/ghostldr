@@ -73,7 +73,7 @@ def rasterize(px: int, cps: list[int]) -> tuple[int, dict[int, tuple]]:
         gen = Path(td) / "gen.c"
         gen.write_text(GEN_C)
         exe = Path(td) / "gen"
-        subprocess.run([cc, "-O1", "-std=gnu11", "-fno-math-errno", f"-I{SEL / 'src'}", str(gen),
+        subprocess.run([cc, "-O1", "-std=gnu11", "-fno-math-errno", "-ffp-contract=off", f"-I{SEL / 'src'}", str(gen),
                         str(SEL / "src/font.c"), "-o", str(exe), "-lm"], check=True)
         out = subprocess.run([str(exe), str(SEL / "font/notosans.glf"), str(px)] + [str(c) for c in cps],
                              capture_output=True, text=True, check=True).stdout
