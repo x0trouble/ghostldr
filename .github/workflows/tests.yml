@@ -1,7 +1,9 @@
 # Builds the core, extension and selector and runs the offline tests
 # (docs/architecture.md#tests) on every push to main and on pull requests.
 # On macOS, as the tests' host harnesses expect (BSD sockets, Homebrew's
-# llvm@18, x86-64 code run under Rosetta).
+# llvm@18), on an Intel runner: the harnesses run the console's x86-64 code,
+# and under Rosetta on the arm64 runners about half the runs failed at random
+# (a SIGBUS running freshly written code, a harness that stopped answering).
 name: tests
 
 on:
@@ -16,7 +18,7 @@ permissions:
 
 jobs:
   test:
-    runs-on: macos-15
+    runs-on: macos-15-intel
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
@@ -25,12 +27,10 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install LLVM 18, Lua, Rosetta and the optional Python modules
+      - name: Install LLVM 18, Lua and the optional Python modules
         run: |
           brew install llvm@18 lua@5.4
           echo "$(brew --prefix lua@5.4)/bin" >> "$GITHUB_PATH"
-          sudo softwareupdate --install-rosetta --agree-to-license || true
-          arch -x86_64 /usr/bin/true
           python -m pip install --upgrade pip
           python -m pip install pillow capstone
 
