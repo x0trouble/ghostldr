@@ -13,7 +13,7 @@ ghostldr runs PS4 game dumps and OpenOrbis homebrew inside *Star Wars Racer Reve
 - Your own game dump: a folder with `eboot.bin` in it. No game files are included.
 - An exFAT USB drive for the games (recommended). Without one, games can be installed into SWRR's saved data over the network.
 - One of these, to start ghostldr:
-  - the release's autoloader save on the console (it needs Save Wizard, or a jailbroken PS4 with Apollo Save Tool, once);
+  - the release's autoloader save on the console.
   - a computer or phone that can send a file over the network (`nc`, or a payload-sender app).
 
 No Python and no program on a computer.
