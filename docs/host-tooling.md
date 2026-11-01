@@ -134,3 +134,15 @@ asset, made apart from this.
   line, `#` comments). Keep console names, account IDs and PSN names in such a
   file outside the repository.
 - Tests: `ghostldr/tests/test_make_release.py`.
+
+### pkgextract-cli
+
+`tools/pkgextract-cli/`: a command-line extractor for fake-signed PS4 PKGs
+(`pkgextract-cli <game.pkg> <output folder> [path inside the package]`), on
+[LibOrbisPkg](https://github.com/maxton/LibOrbisPkg) (LGPL-3.0, fetched at a
+pinned commit by `tools/fetch_deps.sh`). `python3 tools/pkgextract-cli/build.py`
+needs the .NET 9 SDK (and Docker for Linux) and writes one executable per platform into
+`build/pkgextract-cli/`: `pkgextract-cli-macos` (x64 and arm64 in one),
+`pkgextract-cli-linux-x64`, `pkgextract-cli-linux-arm64` and `pkgextract-cli-windows-x64.exe`.
+`pkgextract-cli --licenses` prints the licences. Tests:
+`ghostldr/tests/test_pkgextract.py`.

@@ -1,0 +1,72 @@
+diff --git a/LibOrbisPkg/PFS/PFSCReader.cs b/LibOrbisPkg/PFS/PFSCReader.cs
+index 12c6c1b..c4f7b36 100644
+--- a/LibOrbisPkg/PFS/PFSCReader.cs
++++ b/LibOrbisPkg/PFS/PFSCReader.cs
+@@ -81,10 +81,18 @@ namespace LibOrbisPkg.PFS
+         // slow case: compressed sector
+         var sectorBuf = new byte[(int)sectorSize - 2];
+         _accessor.Read(sectorOffset + 2, sectorBuf, 0, (int)sectorSize - 2);
++        Array.Clear(output, 0, hdr.BlockSz);
+         using (var bufStream = new MemoryStream(sectorBuf))
+         using (var ds = new DeflateStream(bufStream, CompressionMode.Decompress))
+         {
+-          ds.Read(output, 0, hdr.BlockSz);
++          var written = 0;
++          while (written < hdr.BlockSz)
++          {
++            var received = ds.Read(output, written, hdr.BlockSz - written);
++            if (received == 0)
++              throw new InvalidDataException("Compressed PFSC sector ended before the declared block size");
++            written += received;
++          }
+         }
+       }
+     }
+diff --git a/LibOrbisPkg/Util/MemoryMapped.cs b/LibOrbisPkg/Util/MemoryMapped.cs
+index 8f2ca5e..94dae01 100644
+--- a/LibOrbisPkg/Util/MemoryMapped.cs
++++ b/LibOrbisPkg/Util/MemoryMapped.cs
+@@ -1,6 +1,7 @@
+ ﻿using System;
+ using System.IO;
+ using System.IO.MemoryMappedFiles;
++using System.Runtime.CompilerServices;
+ using System.Runtime.InteropServices;
+ 
+ namespace LibOrbisPkg.Util
+@@ -9,7 +10,7 @@ namespace LibOrbisPkg.Util
+   {
+     public static void Read<T>(this IMemoryReader reader, long pos, out T value) where T : struct
+     {
+-      int sizeOfT = Marshal.SizeOf(typeof(T));
++      int sizeOfT = Unsafe.SizeOf<T>();
+       var buf = new byte[sizeOfT];
+       reader.Read(pos, buf, 0, sizeOfT);
+       value = ByteArrayToStructure<T>(buf, 0);
+@@ -24,7 +25,7 @@ namespace LibOrbisPkg.Util
+         return;
+       }
+       // Slow path
+-      int sizeOfT = Marshal.SizeOf(typeof(T));
++      int sizeOfT = Unsafe.SizeOf<T>();
+       var buf = new byte[sizeOfT * count];
+       reader.Read(pos, buf, 0, sizeOfT * count);
+       for (var i = 0; i < count; i++)
+@@ -33,13 +34,11 @@ namespace LibOrbisPkg.Util
+       }
+     }
+ 
+-    // https://stackoverflow.com/a/2887
+-    private static unsafe T ByteArrayToStructure<T>(byte[] bytes, int offset) where T : struct
++    // The bytes as T, as laid out in memory: no runtime marshalling (native AOT has none
++    // for these), the same layout for the blittable types read here
++    private static T ByteArrayToStructure<T>(byte[] bytes, int offset) where T : struct
+     {
+-      fixed (byte* ptr = &bytes[offset])
+-      {
+-        return (T)Marshal.PtrToStructure((IntPtr)ptr, typeof(T));
+-      }
++      return Unsafe.ReadUnaligned<T>(ref bytes[offset]);
+     }
+   }
+   public interface IMemoryAccessor : IMemoryReader

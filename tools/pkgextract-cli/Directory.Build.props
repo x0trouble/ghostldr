@@ -1,0 +1,7 @@
+<Project>
+  <!-- Build output under the repository's ignored build/ folder, not here. -->
+  <PropertyGroup>
+    <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)../../build/pkgextract-cli/obj/</BaseIntermediateOutputPath>
+    <BaseOutputPath>$(MSBuildThisFileDirectory)../../build/pkgextract-cli/bin/</BaseOutputPath>
+  </PropertyGroup>
+</Project>

@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- pkgextract-cli: extract a fake-signed PS4 PKG. Build and package with
+       tools/pkgextract-cli/build.py; LibOrbisPkg comes from tools/fetch_deps.sh. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <AssemblyName>pkgextract-cli</AssemblyName>
+    <RootNamespace>PkgExtractCli</RootNamespace>
+    <Version>1.0.0</Version>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <Deterministic>true</Deterministic>
+    <DebugType>none</DebugType>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <!-- One file per platform: build.py publishes NativeAOT (macOS, Linux) or single-file (Windows). -->
+    <PublishAot Condition="'$(PkgAot)' == 'true'">true</PublishAot>
+    <LibOrbisPkgRoot Condition="'$(LibOrbisPkgRoot)' == ''">$(MSBuildThisFileDirectory)../../build/LibOrbisPkg</LibOrbisPkgRoot>
+  </PropertyGroup>
+
+  <!-- The licences, printed by the licences option. -->
+  <ItemGroup>
+    <EmbeddedResource Include="$(MSBuildThisFileDirectory)../../LICENSE" LogicalName="LICENSE.txt" />
+    <EmbeddedResource Include="$(MSBuildThisFileDirectory)GPL-3.0.txt" LogicalName="GPL-3.0.txt" />
+    <EmbeddedResource Include="$(LibOrbisPkgRoot)/LICENSE.txt" LogicalName="LibOrbisPkg-LICENSE.txt" />
+    <EmbeddedResource Include="$(LibOrbisPkgRoot)/.pkgextract-patched" LogicalName="LibOrbisPkg-commit" />
+    <EmbeddedResource Include="$(NetCoreRoot)LICENSE.txt" LogicalName="dotnet-LICENSE.txt" />
+    <EmbeddedResource Include="$(NetCoreRoot)ThirdPartyNotices.txt" LogicalName="dotnet-THIRD-PARTY-NOTICES.txt" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="$(LibOrbisPkgRoot)/LibOrbisPkg.Core/LibOrbisPkg.Core.csproj" />
+  </ItemGroup>
+</Project>
