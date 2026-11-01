@@ -4,13 +4,20 @@
  * test_netinstall.py starts it and runs the install page's own code against
  * it (netinstall_node.js), as a browser would.
  *
- *     netinst_host ROOT PORT PAGE.gz [CAPACITY_BLOCKS]
+ *     netinst_host ROOT PORT PAGE.gz [CAPACITY_BLOCKS [DRIVES]]
  *
  * Containers live in ROOT/saves/NAME (their size in ROOT/saves/NAME.blocks);
- * a mount is the symlink ROOT/savedataN.  Prints "listening PORT TOKEN" once
- * browsers can connect; then each line on stdin "status" prints the status
- * as one line of JSON; at the end of stdin it stops the server (ns_stop) and
- * prints "stopped".  The log goes to stderr.
+ * a mount is the symlink ROOT/savedataN.  DRIVES: the USB drives mounted,
+ * "FREE:TOTAL:FS" (bytes; exfat, fat32 or -) for each mount point in turn,
+ * comma-separated, an empty one for a mount point with no drive: drive 1 is
+ * the folder ROOT/ghostldr_usb, drive 2 ROOT/ghostldr_usb2, ...
+ *
+ * A thread stands in for the TV's screen: it tells the server it shows
+ * (ns_seen) 4 times a second.  Prints "listening PORT" once browsers can
+ * connect; then, a line at a time on stdin: "status" prints the status as
+ * one line of JSON, "close" stops the screen's polls (the server stays),
+ * "open" starts them again.  At the end of stdin it stops the server
+ * (ns_stop) and prints "stopped".  The log goes to stderr.
  */
 #include <arpa/inet.h>
 #include <dirent.h>
@@ -50,6 +57,9 @@ int fmt(char *buf, size_t size, const char *f, ...)
 #define MOUNT_FULL 0x809F000Cu
 
 static char g_root[1024];
+static struct ns_drive g_drives[NS_MAX_DRIVES];
+static int g_ndrives;
+static volatile int g_tv = 1, g_quit;
 static unsigned long g_capacity = 1ul << 30; /* blocks */
 static pthread_mutex_t g_lock = PTHREAD_MUTEX_INITIALIZER;
 static struct {
@@ -128,6 +138,25 @@ static int h_size(struct ns_env *e, const char *path, unsigned long *size)
         return err();
     *size = (unsigned long)st.st_size;
     return 0;
+}
+
+static int h_mkdir(struct ns_env *e, const char *path)
+{
+    char p[2048];
+    host(p, sizeof(p), path);
+    return mkdir(p, 0777) < 0 ? err() : 0;
+}
+static int h_drives(struct ns_env *e, struct ns_drive *d, int max)
+{
+    int k = 0;
+    for (int i = 0; i < g_ndrives && k < max; i++) {
+        char p[2048];
+        struct stat st;
+        host(p, sizeof(p), g_drives[i].mp);
+        if (g_drives[i].n && stat(p, &st) == 0 && S_ISDIR(st.st_mode))
+            d[k++] = g_drives[i];
+    }
+    return k;
 }
 
 static int h_listen(struct ns_env *e, unsigned short port)
@@ -327,18 +356,43 @@ static int h_remove(struct ns_env *e, const char *name)
     snprintf(cmd, sizeof(cmd), "rm -rf '%s/saves/%s' '%s/saves/%s.blocks'", g_root, name, g_root, name);
     return system(cmd) == 0 ? 0 : (int)0x809F000Bu;
 }
-static unsigned long h_entropy(struct ns_env *e) { return ((unsigned long)arc4random() << 32) | arc4random(); }
+
+/* the TV's screen: its polls */
+static void *tv(void *arg)
+{
+    while (!g_quit) {
+        if (g_tv)
+            ns_seen(arg);
+        usleep(250000);
+    }
+    return NULL;
+}
 
 int main(int argc, char **argv)
 {
     if (argc < 4) {
-        fprintf(stderr, "usage: netinst_host ROOT PORT PAGE.gz [CAPACITY_BLOCKS]\n");
+        fprintf(stderr, "usage: netinst_host ROOT PORT PAGE.gz [CAPACITY_BLOCKS [DRIVES]]\n");
         return 2;
     }
     if (!realpath(argv[1], g_root))
         return 2;
     if (argc > 4)
         g_capacity = strtoul(argv[4], NULL, 10);
+    for (const char *d = argc > 5 ? argv[5] : NULL; d && g_ndrives < NS_MAX_DRIVES; g_ndrives++) {
+        struct ns_drive *x = &g_drives[g_ndrives];
+        unsigned long long fr = 0, to = 0;
+        char fs[16] = "";
+        if (*d != ',' && *d && sscanf(d, "%llu:%llu:%15[a-z0-9-]", &fr, &to, fs) >= 2) {
+            x->n = (unsigned)g_ndrives + 1, x->free = fr, x->total = to;
+            x->fs = !strcmp(fs, "exfat") ? NS_FS_EXFAT : !strcmp(fs, "fat32") ? NS_FS_FAT32 : NS_FS_UNKNOWN;
+            snprintf(x->mp, sizeof(x->mp), g_ndrives ? "/ghostldr_usb%d" : "/ghostldr_usb", g_ndrives + 1);
+            char p[2048];
+            host(p, sizeof(p), x->mp);
+            mkdir(p, 0777);
+        }
+        d = strchr(d, ',');
+        d = d ? d + 1 : NULL;
+    }
     char p[2048];
     snprintf(p, sizeof(p), "%s/saves", g_root);
     mkdir(p, 0777);
@@ -355,7 +409,8 @@ int main(int argc, char **argv)
     e->open = h_open, e->read = h_read, e->write = h_write, e->seek = h_seek, e->close = h_close, e->size = h_size;
     e->listen = h_listen, e->accept = h_accept, e->sockname = h_sockname, e->timeouts = h_timeouts;
     e->send = h_send, e->recv = h_recv, e->sclose = h_sclose, e->shutdown = h_shutdown;
-    e->mount = h_mount, e->umount = h_umount, e->remove = h_remove, e->entropy = h_entropy;
+    e->mount = h_mount, e->umount = h_umount, e->remove = h_remove;
+    e->mkdir = h_mkdir, e->drives = h_drives;
     e->page = page, e->page_size = page_size;
     snprintf(e->address, sizeof(e->address), "127.0.0.1");
     snprintf(e->swrr, sizeof(e->swrr), "CUSA03474");
@@ -368,20 +423,30 @@ int main(int argc, char **argv)
         printf("failed %d %s\n", rc, st.message);
         return 1;
     }
+    pthread_t tv_thread;
+    pthread_create(&tv_thread, NULL, tv, n);
     unsigned port = 0;
     sscanf(st.url, "http://127.0.0.1:%u/", &port);
-    printf("listening %u %s\n", port, st.token);
+    printf("listening %u\n", port);
     fflush(stdout);
     char line[64];
     while (fgets(line, sizeof(line), stdin)) {
+        if (!strncmp(line, "close", 5) || !strncmp(line, "open", 4)) {
+            g_tv = line[0] == 'o';
+            printf("%s\n", g_tv ? "open" : "closed");
+            fflush(stdout);
+            continue;
+        }
         st.size = sizeof(st);
         ns_get_status(n, &st);
-        printf("{\"state\":%u,\"url\":\"%s\",\"token\":\"%s\",\"title\":\"%s\",\"name\":\"%s\",\"done\":%llu,"
+        printf("{\"state\":%u,\"url\":\"%s\",\"where\":\"%s\",\"title\":\"%s\",\"name\":\"%s\",\"done\":%llu,"
                "\"total\":%llu,\"rate_kib\":%u,\"installed\":%u,\"changes\":%u,\"message\":\"%s\"}\n",
-               st.state, st.url, st.token, st.title, st.name, st.done, st.total, st.rate_kib, st.installed,
+               st.state, st.url, st.where, st.title, st.name, st.done, st.total, st.rate_kib, st.installed,
                st.changes, st.message);
         fflush(stdout);
     }
+    g_quit = 1;
+    pthread_join(tv_thread, NULL);
     ns_stop(n);
     printf("stopped\n");
     fflush(stdout);

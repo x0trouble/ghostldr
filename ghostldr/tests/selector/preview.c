@@ -401,7 +401,7 @@ void sel_info_load(struct sel *S, struct sel_info *in)
     static const struct sel_port ports[] = {{9026, "Luac0re's loader: send ghostldr.lua here"},
                                             {9021, "ghostldr's bundle port and ELF loader (9022 when 9021 was taken)"},
                                             {1212, "FTP, while a game runs: the USB drive, and the game's own files"},
-                                            {8090, "The network installer, while it runs (its page and its uploads)"}};
+                                            {8090, "The network installer, while its screen is open (its page and uploads)"}};
     for (int i = 0; i < 4; i++)
         in->ports[i] = ports[i];
     in->nports = 4, in->netinst = 1;
@@ -461,10 +461,11 @@ int sel_netinst(struct sel *S, int op, struct sel_net *st)
         g_net_installed = 1, g_add_title = 1;
     st->state = g_net_state == NET_STOPPED ? NET_STOPPED : busy ? NET_BUSY : NET_WAITING;
     str_copy(st->url, "http://192.168.0.20:8090/", sizeof(st->url));
-    str_copy(st->token, "K7QF-3MXP", sizeof(st->token));
     if (busy) {
         str_copy(st->title, "CUSA00042", sizeof(st->title));
         str_copy(st->name, "Skyward Harbour", sizeof(st->name));
+        if (g_usb)
+            str_copy(st->where, "USB drive 1", sizeof(st->where));
         st->total = 48ull << 30, st->done = st->total * (t - 3000000) / 6000000, st->rate_kib = 40 * 1024;
         str_copy(st->message, "Writing GSKY017 (17 of 49 data containers)", sizeof(st->message));
     } else {

@@ -11,9 +11,9 @@
  *    Yes (its saves stay).
  *  - USB drives: each drive the console has, its file system, size and free
  *    space, the games found on it, FAT32's 4 GiB limit, where logs go.
- *  - Network: the console's address, Install over network (the extension's
- *    web installer: a card with the address to open, its token and its
- *    progress), the ports ghostldr's features use.
+ *  - Network: the console's address, Install over network (the web
+ *    installer: a card with the address to open and its progress; it takes
+ *    installs only while the card is up), the ports ghostldr's features use.
  *  - Logs: whether logs are written to the USB drive, and where they go
  *    (the core's ghost_api.log_usb: rel-diag's log sink).
  *  - Advanced: switches that were run.py flags (conf.c: boot context flags
@@ -279,7 +279,7 @@ static void build(struct sel *S)
         if (in->netinst) {
             r = row(S, SROW_ACTION, "Install over network");
             r->act = SACT_NETINST;
-            sub(r, "Install a game into saved data from a browser on a phone or computer on this network");
+            sub(r, "A game into saved data or onto a USB drive, from a browser on this network");
         } else {
             text_row(S, "INSTALL OVER NETWORK", "This build of ghostldr has no network installer.");
         }
@@ -461,11 +461,22 @@ static void net_step(struct sel *S, u64 now, u32 pressed, u32 held)
             if (st.installed != S->net_seen) { /* its name: from the snapshot taken while it installed */
                 const char *name = st.name[0] ? st.name : S->net.name[0] ? S->net.name : st.title[0] ? st.title
                                  : S->net.title[0] ? S->net.title : "a game";
+                const char *where = st.where[0] ? st.where : S->net.where; /* "USB drive 1": onto a drive */
                 char msg[96];
-                int usb = S->ntitles && S->titles[0].where[0];
-                sel_fmt(msg, sizeof(msg), usb ? "Installed: %s (it shows when no drive has games)" : "Installed: %s", name);
-                sel_log(S, "settings: network install finished (%u this session): %s", st.installed, name);
-                S->net_seen = st.installed, S->reload_req = 1;
+                int usb = S->ntitles && S->titles[0].where[0]; /* the row is the drives' games */
+                if (where[0])
+                    sel_fmt(msg, sizeof(msg), usb && S->can_refresh ? "Installed on %s: %s"
+                                                                    : "Installed on %s: %s (listed when ghostldr starts again)",
+                            where, name);
+                else
+                    sel_fmt(msg, sizeof(msg), usb ? "Installed: %s (it shows when no drive has games)" : "Installed: %s", name);
+                sel_log(S, "settings: network install finished (%u this session)%s%s: %s", st.installed,
+                        where[0] ? " on " : "", where, name);
+                S->net_seen = st.installed;
+                if (!where[0])
+                    S->reload_req = 1;
+                else if (usb && S->can_refresh && !S->refresh_req) /* the drives looked at again, as Triangle does */
+                    S->refresh_req = 1, S->refresh_at = now + 1500000;
                 ui_toast_ok(S, now, msg);
             }
             if (st.changes != S->net_changes) { /* installs and removals: the row again */
@@ -814,14 +825,17 @@ static void net_card(struct sel *S, surface *s, float k)
         ui_text_bold(S, s, n->state == NET_BUSY ? 34 : text_width(S, 56, n->url) <= w ? 56 : 44, tx,
                      ty + (n->state == NET_BUSY ? 52 : 74), n->url, fade(WHITE, a), w);
         ty += n->state == NET_BUSY ? 104 : 150;
-        if (n->state == NET_WAITING) {
-            ui_text_tracked(S, s, 18, tx, ty, "TOKEN", fade(FAINT, a), 2);
-            ui_text_bold(S, s, 44, tx, ty + 56, n->token[0] ? n->token : "-", fade(WHITE, a), w);
-            draw_text(S, s, 23, tx, ty + 98, "The page asks for it before it changes anything.", fade(DIM, a), w);
+        if (n->state == NET_WAITING) { /* no token: this card being up is what lets a browser install */
+            char lines[2][128];
+            ui_text_tracked(S, s, 18, tx, ty, "WHILE THIS SCREEN IS OPEN", fade(FAINT, a), 2);
+            int m = ui_wrap(S, 25, w, "Browsers on this network can install games into saved data or onto a USB drive. "
+                                      "Circle closes it.", lines, 2);
+            for (int i = 0; i < m; i++)
+                draw_text(S, s, 25, tx, ty + 46 + 34 * i, lines[i], fade(SOFT, a), w);
             ty += 140;
         } else {
-            sel_fmt(line, sizeof(line), "%s%s%s", n->name[0] ? n->name : n->title, n->name[0] && n->title[0] ? "  \xC2\xB7  " : "",
-                    n->name[0] ? n->title : "");
+            sel_fmt(line, sizeof(line), "%s%s%s%s%s", n->name[0] ? n->name : n->title, n->name[0] && n->title[0] ? "  \xC2\xB7  " : "",
+                    n->name[0] ? n->title : "", n->where[0] ? "  \xC2\xB7  onto " : "", n->where);
             draw_text(S, s, 30, tx, ty, line, fade(WHITE, a), w);
             bar(s, tx, ty + 30, w, n->done, n->total, a);
             ui_size(d, sizeof(d), n->done), ui_size(t, sizeof(t), n->total);

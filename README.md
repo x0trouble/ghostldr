@@ -20,7 +20,7 @@ You need a PS5 on firmware 13.60 or later with SWRR (US CUSA03474 or EU CUSA0349
 - **A boot with no computer:** two files sent with `nc` or a payload-sender app start a game or the ELF loader, with nothing on the computer serving files ([below](#getting-started)).
 - **The autoloader:** a Luac0re save with ghostldr in it. HALL OF FAME opens the game selector by itself, with nothing sent at all; hold L1 + R1 for Luac0re's loader ([docs/autoload.md](docs/autoload.md)).
 - **The game selector** with **Settings**: what's wrong with a game or a drive, installing over the network, logs, and the options that were `run.py` flags ([docs/selector.md](docs/selector.md)).
-- **Install over network:** a game goes into SWRR's saved data from a browser on a computer or phone ([docs/manager.md](docs/manager.md#install-a-game)).
+- **Install over network:** a game goes into SWRR's saved data, or onto a USB drive in the PS5, from a browser on a computer or phone, while the selector's Install over network screen is open ([docs/manager.md](docs/manager.md#install-a-game)).
 - **Every failure explained on the TV,** and each boot's log on the USB drive ([docs/failures.md](docs/failures.md), [docs/logs.md](docs/logs.md)).
 - **Other games** boot as far as their imports and memory allow.
 - **PS4 consoles** run homebrew and small titles, from SWRR's saved data (not a USB drive). Big games can't run there: the PS4's kernel caps PS2 Classics such as SWRR at 2.5 GiB of memory, and Ghost needs about 4 GiB ([docs/ps4.md](docs/ps4.md)).

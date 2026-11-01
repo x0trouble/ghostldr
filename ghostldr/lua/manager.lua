@@ -934,6 +934,7 @@ p{margin:6px 0}
 button,.btn{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:8px;padding:8px 14px;cursor:pointer}
 button.primary{background:var(--acc);border-color:var(--acc);color:#fff}
 button:disabled{opacity:.45;cursor:default}
+select{font:inherit;padding:7px 9px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--fg);max-width:100%}
 input[type=text]{font:inherit;padding:7px 9px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--fg);min-width:0}
 .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .drop{border:2px dashed var(--line);border-radius:10px;padding:16px;text-align:center;color:var(--mute);margin-top:10px}
@@ -979,8 +980,9 @@ dt{color:var(--mute)}dd{margin:0;word-break:break-word}
 
 <section id="s-go" class="hide">
   <h2>3. Install</h2>
-  <div class="row" id="tok-row"><label for="tok">Token shown on the TV</label>
-    <input id="tok" type="text" style="width:10em" autocomplete="off" spellcheck="false" placeholder="XXXX-XXXX"></div>
+  <div class="row hide" id="target-row"><label for="target">Install to</label>
+    <select id="target"><option value="saves">Saved data</option></select></div>
+  <div id="target-msg" class="small"></div>
   <div class="row" style="margin-top:10px"><button class="primary" id="go">Install</button><button id="stop" disabled>Pause</button>
     <label class="small"><input type="checkbox" id="force"> resend everything</label></div>
   <div class="bar"><i id="bar"></i></div>
@@ -1004,7 +1006,9 @@ const LEGACY_INDEXES = ["GFSINDEX", "GHOSTIDX"];
 const INCOMPLETE = 1, LEGACY_INDEX = 2, SYNTHESIZED = 1;
 const NOT_FOUND = 0x809F0008, GIB = 1 << 30;
 const SAVE_ERRORS = {0x809F0003: "busy", 0x809F0008: "not found", 0x809F000A: "no space left on the console's storage",
-                     0x809F000C: "too many mounted", 0x809F000F: "broken"};
+                     0x809F000C: "too many mounted", 0x809F000F: "broken", 0x80020005: "the drive's I/O failed",
+                     0x80020002: "not there", 0x8002001C: "no space left on the drive", 0x8002001E: "the drive is read-only",
+                     0x80020013: "not a folder", 0xFFFFFFFE: "the size written isn't the size sent"};
 const TITLE_RE = /^[A-Z0-9_-]{1,15}$/;
 const enc = new TextEncoder(), dec = new TextDecoder();
 
@@ -1617,6 +1621,8 @@ function makeSource(kind, name, items, zipFile) {
   return {
     kind, name, files, dirs, skipped, junk, root,
     async bytes(rel) { return files.has(rel) ? new Uint8Array(await (await fileRange(rel, 0, files.get(rel))).arrayBuffer()) : null; },
+    deflated(rel) { const x = map.get(rel); return !!(x && x.zip && x.zip.method !== 0); },
+    part(rel, a, b) { return fileRange(rel, a, b); },
     async blob(rel) { return files.has(rel) ? fileRange(rel, 0, files.get(rel)) : null; },
     streamed(job, off) { let s = false; pieceRanges(job, off, job.size - off, rel => { const x = map.get(rel); if (x.zip && x.zip.method !== 0) s = true; }); return s; },
     async range(job, off, len) {
@@ -1640,7 +1646,8 @@ async function fromZip(file) {
 
 // ---- the console's API (docs/manager.md "Install a game"): env gives
 // fetch(url, opts), post(url, blob, progress(sent), signal) -> {status, json},
-// token(), sleep(ms), log(msg, cls), status(msg, cls), fmtSize(n)
+// token() (manager.lua's, "" for the selector's server, which has none), sleep(ms),
+// log(msg, cls), status(msg, cls), fmtSize(n)
 class HttpError extends Error { constructor(m, code) { super(m); this.code = code; } }
 const hexOf = b => Array.from(b, x => x.toString(16).padStart(2, "0")).join("");
 const unhex = s => s ? new Uint8Array(s.match(/../g).map(x => parseInt(x, 16))) : null;
@@ -1661,7 +1668,7 @@ function makeRx(env) {
       if (raw && r.ok) return {status: +(r.headers.get("X-Gfs-Status") || 0), bytes: new Uint8Array(await r.arrayBuffer())};
       let j = {};
       try { j = await r.json(); } catch (e) { /* not JSON */ }
-      if (r.status === 403 || r.status === 429) throw new HttpError(j.error || "the token is needed", r.status);
+      if (r.status === 403 || r.status === 429) throw new HttpError(j.error || "refused by the console", r.status);
       if (!r.ok && j.rc === undefined) throw new HttpError(j.error || ("HTTP " + r.status), r.status);
       return j;
     }
@@ -1707,7 +1714,7 @@ function makeRx(env) {
         }
         if (r.json && r.status === 409 && typeof r.json.written === "number") { off = r.json.written; continue; }
         if (r.json && r.json.rc) return {status: r.json.rc};
-        if (r.status === 403) throw new InstallError((r.json && r.json.error) || "the token is needed");
+        if (r.status === 403) throw new InstallError((r.json && r.json.error) || "refused by the console");
         if (r.status >= 400) throw new InstallError(`${job.dir}: ` + ((r.json && r.json.error) || "HTTP " + r.status));
         if (signal.stopped) throw new InstallError("paused");
         // the connection dropped: ask the console how far it got
@@ -1720,14 +1727,145 @@ function makeRx(env) {
         env.log(`${job.dir}: connection lost, carrying on from ${env.fmtSize(off)}`, "warn");
       }
     },
+    usbSizes, usbFile,
+    async usbBegin(d, t, bytes, files, largest) {
+      let j;
+      try { j = await api("POST", "usb/begin", {d, t, bytes, files, largest}); }
+      catch (e) { if (e instanceof HttpError && (e.code === 409 || e.code === 404)) throw new InstallError(e.message); throw e; }
+      if (j.rc) throw new InstallError(`USB drive ${d}: ` + errText(j.rc >>> 0));
+      return j;
+    },
+    async usbPut(d, t, bytes, at) {
+      const j = await api("POST", "usb/put", {d, t, at}, bytes);
+      if (j.rc) throw new InstallError(`writing to USB drive ${d}: ` + errText(j.rc >>> 0));
+      if (!j.ok) throw new InstallError(j.error || "writing to the drive failed");
+    },
   };
+  // the sizes of the title's files on USB drive d (-1: not there)
+  async function usbSizes(d, t, paths) {
+    const j = await api("POST", "usb/sizes", {d, t}, enc.encode(paths.join("\n")));
+    if (!j.ok || !Array.isArray(j.sizes) || j.sizes.length !== paths.length) throw new InstallError(j.error || "the drive's files could not be read");
+    return j.sizes;
+  }
+  // one file of size bytes, in one or more requests, carrying on from what the drive has when the connection drops
+  async function usbFile(d, t, rel, size, src, at, progress, signal) {
+    let off = 0, stuck = 0;
+    while (true) {
+      if (signal.stopped) throw new InstallError("paused");
+      const len = src.deflated(rel) ? Math.min(ZCHUNK, size - off) : size - off;
+      const blob = await src.part(rel, off, off + len);
+      const r = await env.post(`/api/install/usb/file?d=${d}&t=${encodeURIComponent(t)}&p=${encodeURIComponent(rel)}&size=${size}&off=${off}&at=${at}`,
+                               blob, n => progress(off + n), signal);
+      if (r.json && r.json.ok && !r.json.rc) {
+        off = r.json.written; stuck = 0;
+        progress(off);
+        if (r.json.done) return;
+        continue;
+      }
+      if (r.json && r.status === 409 && typeof r.json.written === "number") { off = r.json.written; continue; }
+      if (r.json && r.json.rc) throw new InstallError(`${rel}: ` + errText(r.json.rc >>> 0));
+      if (r.status >= 400) throw new InstallError(`${rel}: ` + ((r.json && r.json.error) || "HTTP " + r.status));
+      if (signal.stopped) throw new InstallError("paused");
+      if (++stuck > 12) throw new InstallError("the connection keeps dropping: check the network, then Install again to carry on");
+      env.status(`Connection lost: carrying on (try ${stuck})…`, "warn");
+      await env.sleep(Math.min(16000, 1000 << Math.min(stuck, 4)));
+      let sz;
+      try { sz = (await usbSizes(d, t, [rel]))[0]; } catch (e) { continue; }
+      off = sz > 0 && sz <= size ? sz : 0;
+      env.log(`${rel}: connection lost, carrying on from ${env.fmtSize(off)}`, "warn");
+    }
+  }
+}
+
+// ---- onto a USB drive (the selector's server only: /api/install/usb/): the dump's files as they
+// are, in ghostldr/<title>/app0 on the drive, where ghostldr.py copy puts them and the selector
+// finds them (docs/usb.md).  A file the drive has at its size is kept (as copy does); the rest is
+// checked against the drive's free space first, then sent: small files several to a request,
+// large ones each in its own, eboot.bin last, so a copy cut short is no game yet.
+// the page's "Install to" choices from info, [value, label]: saved data first (the default), then
+// each USB drive the console has mounted with its free space, named as the game selector names them
+const gbText = n => (Math.round(n * 10 / GIB) / 10).toFixed(1) + " GB";
+function targetOptions(info) {
+  const ds = info && Array.isArray(info.drives) ? info.drives : [];
+  return [["saves", "Saved data"]].concat(ds.map(d => [`usb${d.n}`, `USB drive ${d.n} — ${d.total ? gbText(d.free) + " free" : "free space unknown"}`]));
+}
+const USB_SMALL = 1 << 20, USB_BATCH = (4 << 20) - (64 << 10), USB_BATCH_FILES = 512, FAT_MAX = 4 * GIB - 1;
+function usbOrder(files) {
+  const rels = [...files.keys()].filter(r => r !== "eboot.bin").sort(cmpStr);
+  if (files.has("eboot.bin")) rels.push("eboot.bin");
+  return rels;
+}
+// usb/put's body: per entry a u16 path length, the path (UTF-8), a u32 size (0xFFFFFFFF: a folder), the bytes
+function usbBatch(entries) {
+  const parts = [];
+  let n = 0;
+  for (const [rel, data] of entries) {
+    const p = enc.encode(rel), h = new Uint8Array(6 + p.length), dv = new DataView(h.buffer);
+    dv.setUint16(0, p.length, true); h.set(p, 2); dv.setUint32(2 + p.length, data ? data.length : 0xFFFFFFFF, true);
+    parts.push(h); n += h.length;
+    if (data) { parts.push(data); n += data.length; }
+  }
+  const out = new Uint8Array(n);
+  let o = 0;
+  for (const x of parts) { out.set(x, o); o += x.length; }
+  return out;
+}
+// ui: {log(msg), step(text), progress(done, total), begin()?: once the drive took it}; -> {sent, kept, files, total}
+async function usbInstall(rx, src, drive, title, ui, signal) {
+  const rels = usbOrder(src.files), have = new Map();
+  ui.step(`Looking at what USB drive ${drive} has…`);
+  for (let i = 0; i < rels.length; i += 1000) {
+    const part = rels.slice(i, i + 1000), sizes = await rx.usbSizes(drive, title, part);
+    part.forEach((r, k) => have.set(r, sizes[k]));
+  }
+  const todo = rels.filter(r => have.get(r) !== src.files.get(r));
+  let bytes = 0, largest = 0, total = 0;
+  for (const n of src.files.values()) { total += n; largest = Math.max(largest, n); }
+  for (const r of todo) bytes += src.files.get(r);
+  const out = {sent: bytes, kept: rels.length - todo.length, files: rels.length, total};
+  if (!todo.length) return out;
+  if (out.kept) ui.log(`carrying on: ${out.kept} of ${rels.length} files are on the drive already`);
+  const b = await rx.usbBegin(drive, title, bytes, todo.length, largest);
+  ui.log(`USB drive ${drive}${b.fs ? " (" + b.fs + ")" : ""}: ${todo.length} files to ${b.dir}`);
+  if (ui.begin) await ui.begin();
+  let at = total - bytes;
+  ui.progress(at, total);
+  let batch = [], size = 0;
+  async function flush() {
+    if (!batch.length) return;
+    await rx.usbPut(drive, title, usbBatch(batch), at);
+    for (const [, d] of batch) if (d) at += d.length;
+    batch = []; size = 0;
+    ui.progress(at, total);
+  }
+  for (const d of [...src.dirs].sort(cmpStr)) {      // its folders, the empty ones too
+    const k = 6 + enc.encode(d).length;
+    if (size + k > USB_BATCH || batch.length >= USB_BATCH_FILES) await flush();
+    batch.push([d, null]); size += k;
+  }
+  for (const rel of todo) {
+    if (signal.stopped) { await flush(); throw new InstallError("paused"); }
+    const n = src.files.get(rel), k = 6 + enc.encode(rel).length + n;
+    if (n <= USB_SMALL && rel !== "eboot.bin") {
+      if (size + k > USB_BATCH || batch.length >= USB_BATCH_FILES) await flush();
+      batch.push([rel, await src.bytes(rel)]); size += k;
+      continue;
+    }
+    await flush();
+    ui.step(rel);
+    await rx.usbFile(drive, title, rel, n, src, at, done => ui.progress(at + done, total), signal);
+    at += n;
+    ui.progress(at, total);
+  }
+  await flush();
+  return out;
 }
 
 return {CAP, GIB, NOT_FOUND, MAX_CONTAINERS, CATALOG, INDEX_FILE, TAG, INCOMPLETE, LEGACY_INDEX, InstallError,
         sha256, pyJson, normalizeTitle, defaultPrefix, legacyPrefix, prefixProblem, dataName, indexName, saveName,
         metaName, parseSfo, dataBlocks, fileOrder, pack, indexHeader, parseHeader, parseCatalogue, buildCatalogue,
         describeEntry, tagBytes, survey, plan, spaceNeeded, execute, remove, errText, zipEntries, cmpStr,
-        makeSource, fromZip, makeRx, HttpError, readCatalogue};
+        makeSource, fromZip, makeRx, HttpError, readCatalogue, usbInstall, usbOrder, FAT_MAX, targetOptions, gbText};
 }
 const GFS = makeGFS();
 /*GFS-END*/
@@ -1737,6 +1875,7 @@ const PROFILES = {"APOL00004":{"name":"Apollo Save Tool"},"CUSA00900":{"name":"B
 /*UI-BEGIN*/
 const $ = s => document.querySelector(s);
 const MIB = 1048576;
+const gb = GFS.gbText;   // as the game selector shows sizes
 const fmtSize = n => n >= GFS.GIB ? (n / GFS.GIB).toFixed(2) + " GiB" : n >= MIB ? (n / MIB).toFixed(1) + " MiB" : n >= 1024 ? (n / 1024).toFixed(0) + " KiB" : n + " B";
 const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -1819,6 +1958,20 @@ async function choose(getSrc) {
   $("#s-go").classList.remove("hide");
 }
 function prof(title) { return PROFILES[title] || {}; }
+// where it goes: "Saved data", or a USB drive the console has mounted (the selector's server lists them)
+function target() { const m = /^usb(\d)$/.exec($("#target").value); return m ? +m[1] : 0; }
+function drives() { return INFO && Array.isArray(INFO.drives) ? INFO.drives : null; }
+function targets() {
+  const sel = $("#target"), keep = sel.value, ds = drives();
+  $("#target-row").classList.toggle("hide", !ds);
+  sel.innerHTML = GFS.targetOptions(INFO).map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join("");
+  sel.value = [...sel.options].some(o => o.value === keep) ? keep : "saves";
+}
+async function reinfo() {
+  try { INFO = await api("GET", "info"); } catch (e) { return; }
+  targets();
+  if (WHAT) describe();
+}
 function describe() {
   const title = GFS.normalizeTitle($("#title-in").value);
   const sfo = WHAT.sfo, pr = title ? prof(title) : {};
@@ -1831,8 +1984,12 @@ function describe() {
   else if (!WHAT.from) msgs.push(['warn', "The title ID was not read from the game's param.sfo: check it."]);
   const why = prefix && GFS.prefixProblem(prefix);
   if (why) { ok = false; msgs.push(['bad', why]); }
-  const containers = Math.ceil(WHAT.total / GFS.CAP);
-  if (containers > GFS.MAX_CONTAINERS) { ok = false; msgs.push(['bad', "Too big for saved data (at most 93 GiB)."]); }
+  const containers = Math.ceil(WHAT.total / GFS.CAP), to = target(), drive = to && (drives() || []).find(d => d.n === to);
+  let largest = 0;
+  for (const n of SRC.files.values()) largest = Math.max(largest, n);
+  if (!to && containers > GFS.MAX_CONTAINERS) { ok = false; msgs.push(['bad', "Too big for saved data (at most 93 GiB): install it onto a USB drive."]); }
+  if (drive && drive.fs === "FAT32" && largest > GFS.FAT_MAX) { ok = false; msgs.push(['bad', `USB drive ${to} is FAT32, which holds no file of 4 GiB or more, and this game has one: use an exFAT drive.`]); }
+  if (drive && drive.total && drive.free < WHAT.total) msgs.push(['warn', `USB drive ${to} has ${gb(drive.free)} free and the game is ${gb(WHAT.total)}: the console checks what still has to go before anything is sent.`]);
   const dump = /^(CUSA|PLAS|PCAS|PCJS|PLJS|PLJM|PCKS|PLKS|PPSA)\d{5}$/i.test(title || "") && !/^IV\d{4}-/.test(sfo.CONTENT_ID || "");
   if (INFO && INFO.platform === "ps4" && dump)
     msgs.push(['warn', "A PS4 gives SWRR about 2.5 GiB of memory: game dumps largely won't run there. Homebrew and small titles do."]);
@@ -1842,7 +1999,8 @@ function describe() {
     msgs.push(['mute', "Large compressed zips are unpacked in this browser as they are sent: a stored (uncompressed) zip is lighter on a phone."]);
   const dl = [["Game", esc(name || "(no name)")], ["Title ID", esc(title || "?") + (WHAT.from ? ' <span class="mute small">(param.sfo)</span>' : "")],
               ["Version", esc(version || "-")], ["Size", `${fmtSize(WHAT.total)} in ${SRC.files.size} files`],
-              ["Stored as", prefix ? `${containers} save container${containers === 1 ? "" : "s"} ${esc(prefix)}000… + ${esc(prefix)}INDEX` : "-"],
+              ["Stored as", to ? (title ? `its files as they are, in ghostldr/${esc(title)}/app0 on USB drive ${to}` : "-")
+                : prefix ? `${containers} save container${containers === 1 ? "" : "s"} ${esc(prefix)}000… + ${esc(prefix)}INDEX` : "-"],
               ["From", esc(SRC.kind === "zip" ? SRC.name : (SRC.name || "folder")) +
                 (SRC.root && SRC.root.replace(/\/$/, "") !== SRC.name ? " / " + esc(SRC.root.replace(/\/$/, "")) : "")]];
   $("#what").innerHTML = dl.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
@@ -1866,11 +2024,14 @@ async function refresh() {
   document.querySelectorAll("[data-rm]").forEach(b => b.onclick = () => removeTitle(b.dataset.rm));
 }
 const knownPrefixes = () => Object.fromEntries(Object.entries(PROFILES).filter(([, p]) => p.pack && p.pack.prefix).map(([t, p]) => [p.pack.prefix, t]));
+// The selector's server takes installs while its screen is open on the TV: no token.  manager.lua
+// has a session token: its own page's Unlock keeps it for the tab (sessionStorage), and it is used here.
 async function unlock() {
-  TOKEN = ($("#tok").value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  TOKEN = "";
   if (!INFO || !INFO.token) return true;
-  try { await api("POST", "auth"); try { sessionStorage.setItem("gldr-token", TOKEN); } catch (e) { /* storage off */ } return true; }
-  catch (e) { status(esc(e.message) + ": type the token the TV shows.", "bad"); $("#tok").focus(); return false; }
+  try { TOKEN = sessionStorage.getItem("gldr-token") || ""; } catch (e) { /* storage off */ }
+  try { await api("POST", "auth"); return true; }
+  catch (e) { status(esc(e.message) + ': unlock the <a href="/">manager\'s page</a> with its token, then come back here.', "bad"); return false; }
 }
 async function removeTitle(title) {
   if (RUNNING) return;
@@ -1902,7 +2063,25 @@ async function install() {
       status(`${fmtSize(done)} of ${fmtSize(total)}` + (rate > 0 ? ` · ${(rate / 1e6).toFixed(1)} MB/s · about ${eta >= 120 ? Math.round(eta / 60) + " min" : eta + " s"} left` : ""));
     },
   };
+  const to = target();
+  let begun = !to;
   try {
+    if (to) {
+      Object.assign(ui, {async begin() {
+        await api("POST", "begin", {title: WHAT.title, name: WHAT.name.slice(0, 63), total: WHAT.total, to: "usb" + to});
+        begun = true;
+      }});
+      log(`${WHAT.title}: ${SRC.files.size} files, ${fmtSize(WHAT.total)}, onto USB drive ${to}`);
+      const r = await GFS.usbInstall(rx, SRC, to, WHAT.title, ui, signal);
+      $("#bar").style.width = "100%";
+      if (!r.sent) { status(`${esc(WHAT.name || WHAT.title)} is on USB drive ${to} already: nothing to send.`, "ok"); return; }
+      await api("POST", "end", {title: WHAT.title, ok: 1});
+      status(`<b>${esc(WHAT.name || WHAT.title)} is on USB drive ${to}</b>, in ghostldr/${esc(WHAT.title)}/app0 (${fmtSize(r.sent)} in ` +
+             `${Math.round((Date.now() - t0) / 1000)} s${r.kept ? `; ${r.kept} files were there already` : ""}). The game selector lists ` +
+             "the drive's games: Triangle in its row looks again.", "ok");
+      log("install complete", "ok");
+      return;
+    }
     const p = GFS.pack(SRC.files, SRC.dirs, WHAT.title, WHAT.prefix, WHAT.pk);
     for (const c of p.containers) c.lid = p.layoutId;
     const info = {name: WHAT.name, version: WHAT.version};
@@ -1931,11 +2110,12 @@ async function install() {
     const paused = e.message === "paused";
     status(paused ? "Paused. Install again carries on where it stopped." : esc(e.message), paused ? "warn" : "bad");
     log(paused ? "paused" : "stopped: " + e.message, paused ? "warn" : "bad");
-    try { await api("POST", "end", {title: WHAT.title, ok: 0}); } catch (e2) { /* the console is gone */ }
+    if (begun) try { await api("POST", "end", {title: WHAT.title, ok: 0}); } catch (e2) { /* the console is gone */ }
   } finally {
     RUNNING = null;
     $("#stop").disabled = true; $("#go").disabled = !WHAT.ok;
     refresh();
+    reinfo();
   }
 }
 
@@ -1943,6 +2123,8 @@ async function install() {
 $("#pick-dir").onchange = e => e.target.files.length && choose(() => fromFiles(e.target.files));
 $("#pick-zip").onchange = e => e.target.files.length && choose(() => GFS.fromZip(e.target.files[0]));
 $("#title-in").oninput = () => WHAT && describe();
+$("#target").onchange = () => WHAT && describe();
+$("#target").onfocus = reinfo;   // the drives' free space now
 $("#go").onclick = install;
 $("#stop").onclick = () => { if (RUNNING) { RUNNING.stopped = true; if (RUNNING.abort) RUNNING.abort(); } };
 const drop = $("#drop");
@@ -1951,14 +2133,10 @@ drop.ondragleave = () => drop.classList.remove("on");
 drop.ondrop = e => { e.preventDefault(); drop.classList.remove("on"); const dt = e.dataTransfer; choose(() => fromDrop(dt)); };
 window.addEventListener("beforeunload", e => { if (RUNNING) { e.preventDefault(); e.returnValue = ""; } });
 (async () => {
-  const m = location.hash.match(/token=([A-Za-z0-9-]+)/);
-  let saved = "";
-  try { saved = sessionStorage.getItem("gldr-token") || ""; } catch (e) { /* storage off */ }
-  $("#tok").value = m ? m[1] : saved;
   try {
     INFO = await api("GET", "info");
     $("#who").textContent = `${INFO.server === "ghostldr" ? "ghostldr" : "manager"} · SWRR ${INFO.swrr || "?"} · ${(INFO.platform || "").toUpperCase()}`;
-    $("#tok-row").classList.toggle("hide", !INFO.token);
+    targets();
   } catch (e) { $("#who").textContent = "the console does not answer"; }
   refresh();
 })();

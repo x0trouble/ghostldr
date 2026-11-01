@@ -13,7 +13,14 @@ hold it to the Python tools byte for byte:
     v0.1 install adopted, the old default prefix kept, too little space;
   - a .zip read in the browser: stored and deflated entries, a folder above
     app0, macOS junk, each container's bytes whole and from odd offsets;
-  - the page's generated parts (profiles, manager.lua's copy) up to date.
+  - the game selector's server (native/netinst) built for this machine: the
+    page installs through it into saved data and onto USB drives (the
+    dump's files in ghostldr/<TITLE>/app0, where the selector finds them),
+    with no token: it refuses every change once the TV's screen is closed;
+    a full drive and FAT32's limit refused before anything is written,
+    dropped and paused uploads carried on, a stop in the middle prompt;
+  - the page's Install to choices; its generated parts (profiles,
+    manager.lua's copy) up to date.
 
 Needs node (https://nodejs.org); without it only the up-to-date check runs.
 
@@ -454,6 +461,8 @@ class ManagerLiveTests(unittest.TestCase):
 
 
 NATIVE = ROOT / "ghostldr/native"
+SEEN_MS = 1000   # the build's NETINST_SEEN_MS: POSTs refused this long after the TV's screen stopped asking
+GB = 1 << 30
 
 
 def build_native(out: Path) -> None:
@@ -461,32 +470,40 @@ def build_native(out: Path) -> None:
     if not cc:
         raise unittest.SkipTest("no C compiler")
     obj = out.with_suffix(".o")
+    flags = ["-std=gnu11", "-O2", "-Wall", "-Wextra", "-Werror", "-Wno-unused-parameter", f"-DNETINST_SEEN_MS={SEEN_MS}",
+             f"-I{NATIVE / 'netinst'}"]
     # netinst.c as the selector module has it: freestanding, no libc headers
-    subprocess.run([cc, "-std=gnu11", "-O2", "-Wall", "-Wextra", "-Werror", "-Wno-unused-parameter",
-                    "-ffreestanding", "-fno-builtin", f"-I{NATIVE / 'netinst'}", "-c",
-                    str(NATIVE / "netinst/netinst.c"), "-o", str(obj)], check=True)
-    subprocess.run([cc, "-std=gnu11", "-O2", "-Wall", "-Wextra", "-Werror", "-Wno-unused-parameter",
-                    f"-I{NATIVE / 'netinst'}", str(HERE / "ext_native/netinst_host.c"), str(obj), "-o", str(out)],
+    subprocess.run([cc, *flags, "-ffreestanding", "-fno-builtin", "-c", str(NATIVE / "netinst/netinst.c"), "-o", str(obj)],
                    check=True)
+    subprocess.run([cc, *flags, str(HERE / "ext_native/netinst_host.c"), str(obj), "-o", str(out)], check=True)
 
 
 class NativeServer:
-    def __init__(self, exe: Path, root: Path, page: Path, capacity: int = 1 << 30) -> None:
+    """netinst_host: drives are "FREE:TOTAL:FS" for /ghostldr_usb, /ghostldr_usb2, ... ("" for none)."""
+
+    def __init__(self, exe: Path, root: Path, page: Path, capacity: int = 1 << 30, drives: tuple[str, ...] = ()) -> None:
         self.log = tempfile.TemporaryFile()
         self.root = root
         port = free_port()
-        self.proc = subprocess.Popen([str(exe), str(root), str(port), str(page), str(capacity)], stdin=subprocess.PIPE,
-                                     stdout=subprocess.PIPE, stderr=self.log, text=True)
+        self.proc = subprocess.Popen([str(exe), str(root), str(port), str(page), str(capacity), ",".join(drives)],
+                                     stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self.log, text=True)
         line = self.proc.stdout.readline().split()
-        if len(line) != 3 or line[0] != "listening":
+        if len(line) != 2 or line[0] != "listening":
             raise RuntimeError(f"netinst_host: {line} {self.text()}")
-        self.port, self.token = int(line[1]), line[2]
+        self.port = int(line[1])
         self.base = f"http://127.0.0.1:{self.port}"
 
-    def status(self) -> dict:
-        self.proc.stdin.write("status\n")
+    def command(self, what: str) -> str:
+        self.proc.stdin.write(what + "\n")
         self.proc.stdin.flush()
-        return json.loads(self.proc.stdout.readline())
+        return self.proc.stdout.readline()
+
+    def status(self) -> dict:
+        return json.loads(self.command("status"))
+
+    def tv(self, shows: bool) -> None:
+        """The TV's screen open (its polls go on) or closed (they stop; the server stays up)."""
+        self.command("open" if shows else "close")
 
     def stop(self, timeout: float = 30) -> float:
         import time
@@ -512,6 +529,11 @@ class NativeServer:
         return flat(out)
 
 
+def digest(files: dict) -> dict:
+    import hashlib
+    return {k: (len(v), hashlib.sha256(v).hexdigest()[:16]) for k, v in files.items()}
+
+
 def free_port() -> int:
     import socket
     with socket.socket() as s:
@@ -519,13 +541,12 @@ def free_port() -> int:
         return s.getsockname()[1]
 
 
-def http(base: str, method: str, path: str, body: bytes = b"", token: str | None = None) -> tuple[int, dict, bytes]:
+def http(base: str, method: str, path: str, body: bytes = b"") -> tuple[int, dict, bytes]:
     import http.client
     from urllib.parse import urlsplit
     u = urlsplit(base)
     c = http.client.HTTPConnection(u.hostname, u.port, timeout=30)
-    headers = {"X-Ghostldr-Token": token} if token else {}
-    c.request(method, path, body=body if method == "POST" else None, headers=headers)
+    c.request(method, path, body=body if method == "POST" else None)
     r = c.getresponse()
     data = r.read()
     c.close()
@@ -565,8 +586,8 @@ class NativeServerTests(unittest.TestCase):
             self.server.stop()
         self.tmp.cleanup()
 
-    def start(self, capacity: int = 1 << 30) -> NativeServer:
-        self.server = NativeServer(self.exe, self.root, self.page, capacity)
+    def start(self, capacity: int = 1 << 30, drives: tuple[str, ...] = ()) -> NativeServer:
+        self.server = NativeServer(self.exe, self.root, self.page, capacity, drives)
         return self.server
 
     def game_dir(self, files: dict) -> Path:
@@ -577,8 +598,7 @@ class NativeServerTests(unittest.TestCase):
                 "data/a.bin": bytes(range(256)) * 2, "data/b.bin": b"B" * 70}
 
     def node_install(self, srv: NativeServer, files: dict, **kw) -> dict:
-        req = {"op": "http", "cap": CAP, "base": srv.base, "token": srv.token, "dir": str(self.game_dir(files)),
-               "quiet": True}
+        req = {"op": "http", "cap": CAP, "base": srv.base, "dir": str(self.game_dir(files)), "quiet": True}
         req.update(kw)
         return node(req)
 
@@ -613,36 +633,65 @@ class NativeServerTests(unittest.TestCase):
         self.assertIn("frame-ancestors 'none'", h["content-security-policy"])
         code, _, body = http(srv.base, "GET", "/api/install/info")
         info = json.loads(body)
-        self.assertEqual((info["server"], info["swrr"], info["platform"], info["token"]), ("ghostldr", "CUSA03474",
-                                                                                        "ps5", True))
-        self.assertTrue(srv.status()["url"].startswith("http://127.0.0.1:"))
+        self.assertEqual((info["server"], info["swrr"], info["platform"], info["drives"]), ("ghostldr", "CUSA03474",
+                                                                                         "ps5", []))
+        self.assertNotIn("token", info)          # no token: the page asks for none
+        st = srv.status()
+        self.assertTrue(st["url"].startswith("http://127.0.0.1:"))
+        self.assertNotIn("token", st)
+        page = PAGE.read_text()
+        self.assertNotIn('id="tok"', page)       # no token field, nothing read from #token=
+        self.assertNotIn("#token", page)
+        self.assertNotIn("location.hash", page)
 
-    def test_the_token_and_what_may_be_touched(self) -> None:
+    def test_what_may_be_touched_with_no_token(self) -> None:
         srv = self.start()
         (self.root / "saves/GHOSTSAVE").mkdir()
         (self.root / "saves/GLDRCACHE").mkdir()
-        self.assertEqual(http(srv.base, "POST", "/api/install/auth")[0], 403)
-        self.assertEqual(http(srv.base, "POST", "/api/install/auth", token="WRONG-TOKN")[0], 403)
-        self.assertEqual(http(srv.base, "POST", "/api/install/auth", token=srv.token.lower())[0], 200)
+        self.assertEqual(http(srv.base, "POST", "/api/install/auth")[0], 404)     # nothing to check any more
+        self.assertEqual(http(srv.base, "POST", "/api/install/free?bytes=1")[0], 200)
         for path in ("/api/install/put?c=GHOSTSAVE&f=x.bin&blocks=512", "/api/install/delete?c=SLUS-20268",
                      "/api/install/delete?c=GLDRCACHE", "/api/install/put?c=GCUSA12345000&f=x&blocks=512",
                      "/api/install/data?c=GHOSTINDEX&size=3&blocks=512&off=0",
                      "/api/install/delete?c=" + "A" * 40 + "000"):
-            self.assertEqual(http(srv.base, "POST", path, b"abc", token=srv.token)[0], 403, path)
+            self.assertEqual(http(srv.base, "POST", path, b"abc")[0], 403, path)
         self.assertEqual(sorted(p.name for p in (self.root / "saves").iterdir()), ["GHOSTSAVE", "GLDRCACHE"])
-        for _ in range(6):
-            http(srv.base, "POST", "/api/install/auth", token="WRONG-TOKN")
-        self.assertEqual(http(srv.base, "POST", "/api/install/auth", token=srv.token)[0], 429)
+
+    def test_refused_while_the_screen_is_closed(self) -> None:
+        import socket
+        import time
+        srv = self.start(drives=(f"{10 * GB}:{20 * GB}:exfat",))
+        self.assertEqual(http(srv.base, "POST", "/api/install/put?c=GTESTINDEX&f=index.bin&blocks=512", b"abc")[0], 200)
+        srv.tv(False)                            # the screen closed, the server not yet stopped
+        time.sleep(SEEN_MS / 1000 + 0.6)
+        writes = ["/api/install/put?c=GTESTINDEX&f=index.bin&blocks=512", "/api/install/delete?c=GTESTINDEX",
+                  "/api/install/data?c=GTEST000&blocks=512&size=3&off=0&lid=00", "/api/install/free?bytes=1",
+                  "/api/install/begin?title=CUSA12345&total=3", "/api/install/exit",
+                  "/api/install/usb/begin?d=1&t=CUSA12345&bytes=3&files=1&largest=3",
+                  "/api/install/usb/sizes?d=1&t=CUSA12345"]
+        for path in writes:
+            code, _, body = http(srv.base, "POST", path, b"xyz")
+            self.assertEqual(code, 403, path)
+            self.assertIn("screen isn't open on the TV", json.loads(body)["error"])
+        self.assertEqual(http(srv.base, "GET", "/api/install/info")[0], 200)    # looking changes nothing
+        self.assertEqual((self.root / "saves/GTESTINDEX/index.bin").read_bytes(), b"abc")
+        self.assertFalse((self.root / "saves/GTEST000").exists())
+        self.assertFalse((self.root / "ghostldr_usb/ghostldr").exists())
+        self.assertEqual(srv.status()["state"], 1)
+        srv.tv(True)                             # open again: taken
+        time.sleep(0.4)
+        self.assertEqual(http(srv.base, "POST", "/api/install/delete?c=GTESTINDEX")[0], 200)
+        srv.stop()                               # the screen goes: nothing listens
+        with self.assertRaises(OSError):
+            socket.create_connection(("127.0.0.1", srv.port), timeout=2).close()
 
     def test_a_dropped_upload_carries_on(self) -> None:
         import socket
         srv = self.start()
-        t = srv.token
         data = os.urandom(5000)
         q = f"/api/install/data?c=GTEST000&blocks=512&size={len(data)}&lid=00aa"
         s = socket.create_connection(("127.0.0.1", srv.port))
-        s.sendall(f"POST {q}&off=0 HTTP/1.1\r\nX-Ghostldr-Token: {t}\r\nContent-Length: {len(data)}\r\n\r\n".encode()
-                  + data[:1234])
+        s.sendall(f"POST {q}&off=0 HTTP/1.1\r\nContent-Length: {len(data)}\r\n\r\n".encode() + data[:1234])
         s.close()
         import time
         for _ in range(50):
@@ -651,9 +700,9 @@ class NativeServerTests(unittest.TestCase):
                 break
             time.sleep(0.1)
         self.assertEqual(info["session"], {"c": "GTEST000", "size": 5000, "written": 1234, "lid": "00aa"})
-        code, _, body = http(srv.base, "POST", f"{q}&off=1000", data[1000:], token=t)
+        code, _, body = http(srv.base, "POST", f"{q}&off=1000", data[1000:])
         self.assertEqual((code, json.loads(body)["written"]), (409, 1234))
-        code, _, body = http(srv.base, "POST", f"{q}&off=1234", data[1234:], token=t)
+        code, _, body = http(srv.base, "POST", f"{q}&off=1234", data[1234:])
         self.assertEqual(json.loads(body)["done"], True, body)
         self.assertEqual((self.root / "saves/GTEST000/data.bin").read_bytes(), data)
 
@@ -663,8 +712,7 @@ class NativeServerTests(unittest.TestCase):
         srv = self.start()
         q = f"/api/install/data?c=GTEST000&blocks=512&size=9000000&off=0&lid=01"
         s = socket.create_connection(("127.0.0.1", srv.port))
-        s.sendall(f"POST {q} HTTP/1.1\r\nX-Ghostldr-Token: {srv.token}\r\nContent-Length: 9000000\r\n\r\n".encode()
-                  + b"x" * 5_000_000)
+        s.sendall(f"POST {q} HTTP/1.1\r\nContent-Length: 9000000\r\n\r\n".encode() + b"x" * 5_000_000)
         for _ in range(50):
             if srv.status()["state"] == 2:
                 break
@@ -682,8 +730,163 @@ class NativeServerTests(unittest.TestCase):
         self.assertEqual(r["error"], "not enough space")
         self.assertEqual(srv.saves(), {})
 
+    # ---- onto a USB drive ----
+    def usb_game(self) -> dict:
+        return {"eboot.bin": b"E" * 3000, "sce_sys/param.sfo": make_sfo({"TITLE_ID": "CUSA12345", "TITLE": "Test"}),
+                "sce_sys/icon0.png": b"I" * 900, "sce_module/libc.prx": b"L" * 700,
+                "data/big.bin": bytes(range(256)) * (3 << 12) + b"tail",   # past the batches' 1 MiB: sent on its own
+                "data/émoji ✓.txt": b"u" * 5, "data/empty.bin": b""}
+
+    def on_drive(self, slot: str = "ghostldr_usb", title: str = "CUSA12345") -> dict:
+        """{path: (size, sha256)} of the game's files on the drive (short when a test fails)."""
+        app0 = self.root / slot / "ghostldr" / title / "app0"
+        return digest({p.relative_to(app0).as_posix(): p.read_bytes() for p in sorted(app0.rglob("*")) if p.is_file()})
+
+    @unittest.skipUnless(NODE, "needs node")
+    def test_usb_install_lays_the_dump_out_for_the_selector(self) -> None:
+        srv = self.start(drives=(f"{100 * GB}:{200 * GB}:exfat", "", f"{50 * GB}:{60 * GB}:exfat"))
+        files = self.game_dir(self.usb_game())
+        (files / "empty-folder").mkdir()
+        r = self.node_install(srv, self.usb_game(), drive=3)
+        self.assertNotIn("error", r, srv.text())
+        self.assertEqual([d["n"] for d in r["info"]["drives"]], [1, 3])   # mount point 2 has no drive
+        self.assertEqual(self.on_drive("ghostldr_usb3"), digest(self.usb_game()))   # the files as they are, nothing packed
+        app0 = self.root / "ghostldr_usb3/ghostldr/CUSA12345/app0"
+        self.assertTrue((app0 / "empty-folder").is_dir())
+        self.assertEqual(sorted(p.name for p in (app0.parent).iterdir()), ["app0"])
+        self.assertFalse((self.root / "ghostldr_usb/ghostldr").exists())
+        self.assertEqual(list((self.root / "saves").iterdir()), [])         # nothing in saved data
+        st = srv.status()
+        self.assertEqual((st["state"], st["installed"], st["where"], st["title"]), (1, 1, "USB drive 3", "CUSA12345"))
+        self.assertEqual(st["done"], st["total"])
+        self.assertIn("Installed Test on USB drive 3", st["message"])
+        self.assertEqual(st["changes"], 0)                                  # the catalogue untouched
+        self.assertEqual(r["progress"][-1], sum(len(v) for v in self.usb_game().values()))
+        self.assertEqual(r["progress"], sorted(r["progress"]))              # it only goes up
+        # the console's own rules (usb_drive.scan is approot.c's, test_usb.py) find it there
+        sys.path.insert(0, str(ROOT / "ghostldr/host"))
+        import usb_drive
+        sc = usb_drive.scan(self.root / "ghostldr_usb3")
+        self.assertEqual([(g.id, g.folder, g.problem) for g in sc.games], [("CUSA12345", "ghostldr/CUSA12345", "")])
+        # again: every file is there at its size, nothing sent, nothing counted as an install
+        r2 = self.node_install(srv, self.usb_game(), drive=3)
+        self.assertEqual((r2["usb"]["sent"], r2["usb"]["kept"]), (0, len(self.usb_game())))
+        self.assertEqual(srv.status()["installed"], 1)
+
+    @unittest.skipUnless(NODE, "needs node")
+    def test_usb_eboot_goes_last(self) -> None:
+        srv = self.start(drives=(f"{100 * GB}:{200 * GB}:exfat",))
+        r = self.node_install(srv, self.usb_game(), drive=1, pause_at=1)   # paused after the first request
+        self.assertEqual(r["error"], "paused")
+        have = self.on_drive()
+        self.assertTrue(have)
+        self.assertNotIn("eboot.bin", have)          # a copy cut short is no game yet
+        sys.path.insert(0, str(ROOT / "ghostldr/host"))
+        import usb_drive
+        self.assertEqual([g.id for g in usb_drive.scan(self.root / "ghostldr_usb").games if not g.problem], [])
+        self.assertEqual(srv.status()["state"], 1)   # the page's end (ok=0): waiting again
+        r = self.node_install(srv, self.usb_game(), drive=1)   # Install again carries on: what is there is kept
+        self.assertNotIn("error", r)
+        self.assertEqual(r["usb"]["kept"], len(have))
+        self.assertEqual(self.on_drive(), digest(self.usb_game()))
+
+    @unittest.skipUnless(NODE, "needs node")
+    def test_usb_full_drive_refused_before_anything_is_written(self) -> None:
+        srv = self.start(drives=(f"{2 << 20}:{GB}:exfat",))   # 2 MiB free, the game 3 MiB
+        r = self.node_install(srv, self.usb_game(), drive=1)
+        self.assertIn("not enough space on USB drive 1", r["error"])
+        self.assertIn("Nothing was changed", r["error"])
+        self.assertFalse((self.root / "ghostldr_usb/ghostldr").exists())
+        st = srv.status()
+        self.assertEqual((st["state"], st["installed"]), (1, 0))  # no install begun on the TV
+        self.assertIn("not enough space", st["message"])
+
+    def test_usb_fat32_and_names(self) -> None:
+        srv = self.start(drives=(f"{100 * GB}:{200 * GB}:fat32",))
+        code, _, body = http(srv.base, "POST", f"/api/install/usb/begin?d=1&t=CUSA12345&bytes=10&files=1&largest={5 * GB}")
+        self.assertEqual(code, 409)
+        self.assertIn("FAT32", json.loads(body)["error"])
+        self.assertFalse((self.root / "ghostldr_usb/ghostldr").exists())
+        for q in ("d=2&t=CUSA12345", "d=1&t=../x", "d=1&t=cusa12345", "d=1&t="):
+            self.assertIn(http(srv.base, "POST", f"/api/install/usb/begin?{q}&bytes=1&files=1&largest=1")[0], (400, 404), q)
+        # nothing begun: no file goes anywhere
+        self.assertEqual(http(srv.base, "POST", "/api/install/usb/file?d=1&t=CUSA12345&p=a.bin&size=1&off=0", b"a")[0], 409)
+        self.assertEqual(http(srv.base, "POST", "/api/install/usb/begin?d=1&t=CUSA12345&bytes=1&files=1&largest=1")[0], 200)
+        bad = ("../escape.bin", "a/../../b", "/abs", "a//b", "a\\b", "c:d", "a/./b", "", "x" * 300)
+        for p in bad:
+            from urllib.parse import quote
+            code = http(srv.base, "POST", f"/api/install/usb/file?d=1&t=CUSA12345&p={quote(p)}&size=1&off=0", b"a")[0]
+            self.assertEqual(code, 400, p)
+        batch = struct.pack("<H", 9) + b"../up.bin" + struct.pack("<I", 1) + b"u"
+        self.assertEqual(http(srv.base, "POST", "/api/install/usb/put?d=1&t=CUSA12345", batch)[0], 400)
+        self.assertEqual(http(srv.base, "POST", "/api/install/usb/file?d=1&t=CUSA12345&p=x&size=5000000000&off=0", b"")[0], 409)
+        everything = sorted(str(p.relative_to(self.root)) for p in self.root.rglob("*") if p.is_file())
+        self.assertEqual(everything, [])
+        self.assertFalse((self.root / "up.bin").exists() or (self.root / "ghostldr_usb/up.bin").exists())
+
+    def test_usb_dropped_file_carries_on(self) -> None:
+        import socket
+        import time
+        srv = self.start(drives=(f"{100 * GB}:{200 * GB}:exfat",))
+        self.assertEqual(http(srv.base, "POST", "/api/install/usb/begin?d=1&t=CUSA12345&bytes=9000&files=1&largest=9000")[0],
+                         200)
+        data = os.urandom(9000)
+        q = f"/api/install/usb/file?d=1&t=CUSA12345&p=data%2Fbig.bin&size={len(data)}&at=0"
+        s = socket.create_connection(("127.0.0.1", srv.port))
+        s.sendall(f"POST {q}&off=0 HTTP/1.1\r\nContent-Length: {len(data)}\r\n\r\n".encode() + data[:4321])
+        s.close()
+        path = self.root / "ghostldr_usb/ghostldr/CUSA12345/app0/data/big.bin"
+        for _ in range(50):
+            sizes = json.loads(http(srv.base, "POST", "/api/install/usb/sizes?d=1&t=CUSA12345", b"data/big.bin\nnope")[2])
+            if sizes["sizes"][0] == 4321:
+                break
+            time.sleep(0.1)
+        self.assertEqual(sizes["sizes"], [4321, -1])
+        code, _, body = http(srv.base, "POST", f"{q}&off=4000", data[4000:])
+        self.assertEqual((code, json.loads(body)["written"]), (409, 4321))
+        code, _, body = http(srv.base, "POST", f"{q}&off=4321", data[4321:])
+        self.assertEqual(json.loads(body).get("done"), True, body)
+        self.assertEqual(path.read_bytes(), data)
+
+    def test_stop_in_the_middle_of_a_usb_file_is_prompt(self) -> None:
+        import socket
+        import time
+        srv = self.start(drives=(f"{100 * GB}:{200 * GB}:exfat",))
+        http(srv.base, "POST", "/api/install/usb/begin?d=1&t=CUSA12345&bytes=9000000&files=1&largest=9000000")
+        http(srv.base, "POST", "/api/install/begin?title=CUSA12345&name=Test&total=9000000&to=usb1")
+        s = socket.create_connection(("127.0.0.1", srv.port))
+        s.sendall(b"POST /api/install/usb/file?d=1&t=CUSA12345&p=big.bin&size=9000000&off=0&at=0 HTTP/1.1\r\n"
+                  b"Content-Length: 9000000\r\n\r\n" + b"x" * 5_000_000)
+        for _ in range(50):
+            st = srv.status()
+            if st["done"] >= 4_000_000:
+                break
+            time.sleep(0.1)
+        self.assertEqual((st["state"], st["where"]), (2, "USB drive 1"))
+        self.assertIn("Writing big.bin", st["message"])
+        self.assertLess(srv.stop(), 5)           # Circle on the TV: the server's thread woke and ended
+        s.close()
+        got = (self.root / "ghostldr_usb/ghostldr/CUSA12345/app0/big.bin").stat().st_size
+        self.assertTrue(0 < got <= 5_000_000, got)   # what arrived, in place: Install again carries on
+
+
 
 class PageTests(unittest.TestCase):
+    @unittest.skipUnless(NODE, "needs node")
+    def test_install_to_choices(self) -> None:
+        """Saved data first (the default), then each drive the console has mounted, with its free space as
+        the game selector shows sizes; manager.lua lists none."""
+        info = {"server": "ghostldr", "drives": [{"n": 1, "fs": "exFAT", "free": 442710937190, "total": 4000787030016},
+                                                 {"n": 2, "fs": "FAT32", "free": 30064771072, "total": 31914983424},
+                                                 {"n": 4, "fs": "", "free": 0, "total": 0}]}
+        self.assertEqual(node({"op": "targets", "info": info})["options"],
+                         [["saves", "Saved data"], ["usb1", "USB drive 1 — 412.3 GB free"],
+                          ["usb2", "USB drive 2 — 28.0 GB free"], ["usb4", "USB drive 4 — free space unknown"]])
+        self.assertEqual(node({"op": "targets", "info": {"server": "manager", "token": True}})["options"],
+                         [["saves", "Saved data"]])
+        page = PAGE.read_text()
+        self.assertIn('<option value="saves">Saved data</option>', page)   # selected before info answers
+
     def test_generated_parts_are_up_to_date(self) -> None:
         out = subprocess.run([sys.executable, str(ROOT / "ghostldr/tools/netinstall_page.py"), "--check"],
                              capture_output=True, text=True)

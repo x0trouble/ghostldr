@@ -18,6 +18,14 @@
  *  - Save containers: the core's gfs_mount_user (SWRR's own
  *    sceSaveDataMount, the user running SWRR) and gfs_umount;
  *    sceSaveDataDelete for that user.
+ *  - USB drives: the ones the extension mounted in SWRR's sandbox
+ *    (ext/src/approot.c: the device list's drives in its order, at
+ *    /ghostldr_usb, /ghostldr_usb2, ..., as Settings reads them in info.c),
+ *    each still a folder there, with its free space at that moment: the
+ *    mount point's statfs when libkernel answers it (the drive's own file
+ *    system under the nullfs mount), else sceUsbStorageGetDeviceInfo of
+ *    the list's drive with the same number.  Files go on with the kernel's
+ *    own calls (the mount is read-write), folders with sceKernelMkdir.
  *  - The page: ghostldr/data/netinstall.html.gz, gzip of the page
  *    (netinstall_page.py keeps it current), included at build time.
  *  - The address shown on the TV: sceNetCtlGetInfo(IP_ADDRESS); the server
@@ -74,6 +82,10 @@ struct sel_env {
     int (*sigaction)(int, const void *, void *);
     s32 (*sd_delete)(const void *);
     int (*initial_user)(u32 *);
+    s32 (*mkdir)(const char *, int);
+    s32 (*usb_list)(u32 *, s32 *);
+    s32 (*usb_info)(u32, u8 *);
+    int (*statfs)(const char *, void *);
 };
 
 struct sin {
@@ -294,11 +306,70 @@ static int e_remove(struct ns_env *e, const char *name)
     return S->sd_delete(d);
 }
 
-static unsigned long e_entropy(struct ns_env *e)
+static int e_mkdir(struct ns_env *e, const char *path) { return S->mkdir ? (int)sce(S->mkdir(path, 0777)) : -ENOSYS; }
+
+/* the drives mounted at /ghostldr_usb, /ghostldr_usb2, ...: drive i of the
+ * device list at mount point i, while that is a folder (approot.c mounts
+ * them in the list's order) */
+static int e_drives(struct ns_env *e, struct ns_drive *d, int max)
 {
-    u32 lo, hi;
-    __asm__ volatile("rdtsc" : "=a"(lo), "=d"(hi));
-    return ((u64)hi << 32 | lo) * 0x9E3779B97F4A7C15ul;
+    if (!S->usb_list || !S->usb_info) { /* Settings loaded the library (info.c drives) */
+        char name[32] = "libSceUsbStorage.sprx", f1[32] = "sceUsbStorageGetDeviceList",
+             f2[32] = "sceUsbStorageGetDeviceInfo";
+        u32 h = 0;
+        if (S->api->host_find_module(name, &h) != 0 || !h)
+            return 0;
+        *(void **)&S->usb_list = S->api->host_dlsym(h, f1);
+        *(void **)&S->usb_info = S->api->host_dlsym(h, f2);
+        if (!S->usb_list || !S->usb_info)
+            return 0;
+    }
+    u32 ids[16];
+    s32 n = 0;
+    for (unsigned i = 0; i < 16; i++)
+        ids[i] = 0;
+    if (S->usb_list(ids, &n) != 0)
+        return 0;
+    int k = 0;
+    for (s32 i = 0; i < n && i < NS_MAX_DRIVES && k < max; i++) {
+        struct ns_drive *x = &d[k];
+        u8 st[0x78], b[0x400];
+        char *mp = x->mp;
+        const char *base = "/ghostldr_usb";
+        unsigned l = 0;
+        for (; base[l]; l++)
+            mp[l] = base[l];
+        if (i)
+            mp[l++] = (char)('1' + i);
+        mp[l] = 0;
+        if (S->k->stat(mp, st) != 0 || (*(u16 *)(st + 8) & 0xF000) != 0x4000)
+            continue;
+        for (unsigned j = 0; j < sizeof(b); j++)
+            b[j] = 0;
+        x->n = (unsigned)i + 1, x->fs = NS_FS_UNKNOWN, x->total = x->free = 0;
+        if (S->usb_info(ids[i], b) == 0) {
+            u32 features = *(u32 *)(b + 0x330);
+            x->total = *(u64 *)b, x->free = *(u64 *)(b + 8);
+            x->fs = features & 0x80 ? NS_FS_EXFAT : features & 0x40 ? NS_FS_FAT32 : NS_FS_UNKNOWN; /* docs/usb.md */
+        }
+        /* struct statfs (FreeBSD 9 to 11, 472 bytes; 12's is 2344): f_bsize @16, f_blocks @32, f_bavail @48,
+         * f_fstypename[16] @280 */
+        u8 sf[4096];
+        for (unsigned j = 0; j < sizeof(sf); j++)
+            sf[j] = 0;
+        if (S->statfs && S->statfs(mp, sf) == 0 && *(u64 *)(sf + 16) && *(u64 *)(sf + 32)) {
+            u64 bs = *(u64 *)(sf + 16);
+            s64 avail = *(s64 *)(sf + 48);
+            const char *t = (const char *)sf + 280;
+            x->total = *(u64 *)(sf + 32) * bs, x->free = avail > 0 ? (u64)avail * bs : 0;
+            if (t[0] == 'e' && t[1] == 'x' && t[2] == 'f' && t[3] == 'a' && t[4] == 't')
+                x->fs = NS_FS_EXFAT;
+            else if (t[0] == 'm' && t[1] == 's' && t[2] == 'd' && t[3] == 'o' && t[4] == 's')
+                x->fs = NS_FS_FAT32;
+        }
+        k++;
+    }
+    return k;
 }
 
 /* ---- the selector's calls (info.c) ---- */
@@ -326,6 +397,8 @@ int netinst_start(const struct ghost_api *api, void **handle)
     SYM(process_time, "sceKernelGetProcessTime");
     SYM(join, "scePthreadJoin");
     SYM(sigaction, "sigaction");
+    SYM(mkdir, "sceKernelMkdir");
+    SYM(statfs, "statfs");
 #undef SYM
     *(void **)&v->sd_delete = api->host_real_in("libSceSaveData", "sceSaveDataDelete");
     *(void **)&v->initial_user = api->host_real_in("libSceUserService", "sceUserServiceGetInitialUser");
@@ -349,7 +422,8 @@ int netinst_start(const struct ghost_api *api, void **handle)
     e->open = e_open, e->read = e_read, e->write = e_write, e->seek = e_seek, e->close = e_close, e->size = e_size;
     e->listen = e_listen, e->accept = e_accept, e->sockname = e_sockname, e->timeouts = e_timeouts;
     e->send = e_send, e->recv = e_recv, e->sclose = e_sclose, e->shutdown = e_shutdown;
-    e->mount = e_mount, e->umount = e_umount, e->remove = e_remove, e->entropy = e_entropy;
+    e->mount = e_mount, e->umount = e_umount, e->remove = e_remove;
+    e->mkdir = e_mkdir, e->drives = e_drives;
     e->page = netinst_page_start;
     e->page_size = (unsigned long)(netinst_page_end - netinst_page_start);
     e->platform[0] = 'p', e->platform[1] = 's', e->platform[2] = (v->ctx->flags & CTX_FLAG_PS4) ? '4' : '5';
@@ -371,7 +445,12 @@ int netinst_start(const struct ghost_api *api, void **handle)
     return rc;
 }
 
-int netinst_status(void *handle, struct netinst_status *st) { return ns_get_status(handle, st); }
+/* the card's poll: the screen is up (the server takes POSTs while it is) */
+int netinst_status(void *handle, struct netinst_status *st)
+{
+    ns_seen(handle);
+    return ns_get_status(handle, st);
+}
 
 void netinst_stop(void **handle)
 {

@@ -29,8 +29,9 @@ The files
    file in SWRR's saved data.
 4. The game selector shows your games: Cross starts one. Square opens
    Settings: what is wrong with a game or a drive, Install over network (an
-   address to open in a browser on a phone or computer), the logs, Advanced,
-   and Close ghostldr.
+   address to open in a browser on a phone or computer, which installs into
+   saved data or onto a USB drive while that screen is open), the logs,
+   Advanced, and Close ghostldr.
 
 No computer at all: the release page's ghostldr-<version>-save-*.zip files
 are a Luac0re save with ghostldr in it (resign it to your account as

@@ -1,11 +1,17 @@
 /*
  * ghostldr's network installer (docs/manager.md "Install a game"): a web
- * server that installs a game into SWRR's saved data from a browser,
- * started from the game selector's Settings ("Install over network").  It
- * serves the install page (ghostldr/data/netinstall.html), whose JavaScript
- * lays the game's folder or .zip out the way gfs_pack.py does, and stores
- * what the page sends into save containers through the same /api/install/
- * requests as manager.lua.
+ * server that installs a game from a browser, into SWRR's saved data or
+ * onto a USB drive, started from the game selector's Settings ("Install
+ * over network").  It serves the install page
+ * (ghostldr/data/netinstall.html), whose JavaScript lays the game's folder
+ * or .zip out the way gfs_pack.py does, and stores what the page sends into
+ * save containers through the same /api/install/ requests as manager.lua;
+ * onto a drive, the dump's files as they are (/api/install/usb/).
+ *
+ * No token: it changes nothing unless the TV shows its screen.  The
+ * selector starts it as the screen opens and stops it as it closes, and
+ * the server itself refuses every POST once the screen hasn't asked for
+ * its status (ns_seen) for NETINST_SEEN_MS.
  *
  *   netinst.c      the server: HTTP, the requests, the status the selector
  *                  shows.  Freestanding C with no globals and no relocations
@@ -21,6 +27,18 @@
  * tests/ext_native/netinst_host.c.  Plain C types only.
  */
 #pragma once
+
+/* a USB drive (ns_env.drives) */
+#define NS_FS_UNKNOWN 0
+#define NS_FS_EXFAT 1
+#define NS_FS_FAT32 2
+struct ns_drive {
+    unsigned n;    /* "USB drive n": its mount point's number (1: /ghostldr_usb, 2: /ghostldr_usb2) */
+    unsigned fs;   /* NS_FS_* */
+    unsigned long long total, free; /* bytes; 0: unknown */
+    char mp[24];   /* its mount point */
+};
+#define NS_MAX_DRIVES 4
 
 struct ns_env {
     void *ctx; /* the environment's own */
@@ -41,6 +59,10 @@ struct ns_env {
     long (*seek)(struct ns_env *e, int fd, long off);
     int (*close)(struct ns_env *e, int fd);
     int (*size)(struct ns_env *e, const char *path, unsigned long *size); /* 0, or -errno */
+    int (*mkdir)(struct ns_env *e, const char *path); /* 0, or -errno (-NS_EEXIST: there already) */
+    /* the USB drives mounted in SWRR's sandbox (/ghostldr_usb, /ghostldr_usb2,
+     * ...), with their free space now: up to max, the count */
+    int (*drives)(struct ns_env *e, struct ns_drive *d, int max);
     /* TCP: a listening socket on port (any address), or -errno; accept waits
      * up to timeout_ms (-ETIMEDOUT); send sends all of it */
     int (*listen)(struct ns_env *e, unsigned short port);
@@ -58,7 +80,6 @@ struct ns_env {
                  unsigned long *required);
     int (*umount)(struct ns_env *e, const char mp[16]); /* the commit */
     int (*remove)(struct ns_env *e, const char *name);
-    unsigned long (*entropy)(struct ns_env *e);
     /* the page, gzip-compressed */
     const unsigned char *page;
     unsigned long page_size;
@@ -68,8 +89,11 @@ struct ns_env {
 };
 
 /* ns_env's errno values (FreeBSD's) */
+#define NS_ENOENT 2
 #define NS_EIO 5
 #define NS_ENOMEM 12
+#define NS_EEXIST 17
+#define NS_ENOSPC 28
 #define NS_EAGAIN 35
 #define NS_ETIMEDOUT 60
 #define NS_O_RDONLY 0
@@ -87,7 +111,7 @@ struct netinst_status {
     unsigned size;  /* sizeof(struct netinst_status), set by the caller */
     unsigned state; /* NETINST_* */
     char url[40];   /* "http://192.168.1.10:8090/" */
-    char token[12]; /* "K7QF-3MXP": writes need it */
+    char where[12]; /* "USB drive 1" while installing onto a drive, "" into saved data */
     char title[16]; /* what is being installed ("" when nothing) */
     char name[64];  /* its name */
     unsigned long long done, total; /* bytes of it stored so far, of its total */
@@ -98,6 +122,9 @@ struct netinst_status {
 };
 
 #define NETINST_PORT 8090 /* the first port tried, then the next ones up to +9 */
+#ifndef NETINST_SEEN_MS
+#define NETINST_SEEN_MS 30000 /* POSTs refused once the TV's screen hasn't asked for so long (it asks 4 times a second) */
+#endif
 #define NETINST_BUF (4u << 20)
 #define NETINST_BUFS 4
 
@@ -107,6 +134,7 @@ struct netinst;
  * to show (its message says why). */
 int ns_start(struct ns_env *e, unsigned short port, struct netinst **out);
 int ns_get_status(struct netinst *n, struct netinst_status *st); /* a snapshot: 0 */
+void ns_seen(struct netinst *n); /* the TV shows the installer's screen now (netinst_status, at each poll) */
 /* stop serving, commit an open container, join the threads, free it all */
 void ns_stop(struct netinst *n);
 struct ns_env *ns_env_of(struct netinst *n);
@@ -114,7 +142,8 @@ struct ns_env *ns_env_of(struct netinst *n);
 /* ---- the game selector's Settings > Network > Install over network
  * (selector/src/info.c; netinst_sel.c).  start: on the boot thread; 0, or
  * < 0 (a handle may still be set: its status says why).  status: a
- * snapshot, st->size set by the caller.  stop: joins the server's threads
+ * snapshot, st->size set by the caller; it also tells the server that the
+ * screen is up (ns_seen), so only the screen's own poll calls it.  stop: joins the server's threads
  * and frees everything; *handle is NULL afterwards.  The selector calls it
  * before it returns. ---- */
 struct ghost_api;

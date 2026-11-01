@@ -146,21 +146,22 @@ Pick a game with Cross. The first boot of a game takes a minute or two. On a new
 
 ## No drive: install over the network
 
-A game can go into SWRR's saved data from a browser on a computer or phone. Nothing else is needed on that device ([manager.md](manager.md#install-a-game)).
+A game can go into SWRR's saved data from a browser on a computer or phone. Nothing else is needed on that device ([manager.md](manager.md#install-a-game)). The game selector's installer can also put it onto a USB drive plugged into the PS5, as a copy from a computer would.
 
 1. **Start the installer,** either way:
-   - **From the game selector:** Settings → Network → **Install over network**. A card on the TV shows the address to open, a QR code of it for a phone's camera, and a token.
+   - **From the game selector:** Settings → Network → **Install over network**. A card on the TV shows the address to open and a QR code of it for a phone's camera. Browsers can install only while that card is open: there is no token to type. Circle closes it.
    - **Without booting ghostldr:** with Luac0re's loader listening, `nc CONSOLE 9026 < manager.lua`. A notification shows the address and the token; open `http://CONSOLE:8090/install`.
 2. **Open the address** in the browser and choose the game:
    - **Choose folder…** on a computer: the dump's folder, the one with `eboot.bin` (dragging it onto the page works too);
    - **Choose .zip…** on a phone (or a computer): a `.zip` of that folder.
-3. **Check** the name, title ID, version and size the page read, type the **token** from the TV, and **Install**.
+3. **Check** the name, title ID, version and size the page read, choose **Install to** (**Saved data**, or a USB drive with its free space, e.g. `USB drive 1 — 412.3 GB free`), and **Install**. With `manager.lua`, unlock its own page with the token first.
 
 The page shows the progress, the speed and the time left. On a PS5 it goes at 22–25 MB/s, the rate the PS5 writes saved data at: a 50 GB game takes about 35 minutes. Keep the page open, and the phone or computer awake, until it says the game is installed.
 
 - **Keep the PS5 out of rest mode** while it installs (Settings → System → Power Saving).
 - **Interrupted** (Wi-Fi, a sleeping phone): the page carries on by itself. Closed the page? Choose the same game again and Install: what's on the PS5 already is kept.
-- **Not enough space:** the page checks before sending anything and says how much is missing.
+- **Not enough space:** the page checks before sending anything and says how much is missing (on a USB drive too: nothing is written then).
+- **Onto a USB drive:** the game's files go into `ghostldr/<TITLE ID>/app0` on it, as they are. On a boot from the drive's games it joins the row when it's done; otherwise it's listed the next time ghostldr starts. Files already there at their size are kept when you install again.
 - **In the selector**, the new game joins the row when it's installed: pick it. With `manager.lua`, press **Exit** on the page (Luac0re's loader is back), then send `ghostldr.lua`.
 - **Remove:** the page's list of installed games has a **Remove** button per game. Its data goes; its progress stays.
 - **Several games** live side by side; installing one never deletes another.

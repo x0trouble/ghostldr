@@ -184,7 +184,7 @@ struct sel_info {
 #define NET_FAILED 4
 struct sel_net {
     u32 state; /* NET_* */
-    char url[48], token[16], title[16], name[64];
+    char url[48], where[16], title[16], name[64]; /* where: "USB drive 1" onto a drive, "" into saved data */
     u64 done, total;
     u32 rate_kib, installed;
     char message[128];

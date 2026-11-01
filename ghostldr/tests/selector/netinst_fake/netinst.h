@@ -15,7 +15,7 @@ struct netinst_status {
     unsigned size;
     unsigned state;
     char url[40];
-    char token[12];
+    char where[12];
     char title[16];
     char name[64];
     unsigned long long done, total;

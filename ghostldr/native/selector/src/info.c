@@ -15,8 +15,9 @@
  *    under /ghostldr_usb, /ghostldr_usb2, ... in the device list's order);
  *  - the log on the USB drive (ghost_api.log_usb) and the network installer
  *    (native/netinst, linked into this module when it is in the tree: a web
- *    server that runs while the selector does, in the emulator's JIT buffer
- *    with the rest of this module, so it costs no new JIT memory).
+ *    server that runs while its card is up, in the emulator's JIT buffer
+ *    with the rest of this module, so it costs no new JIT memory; each
+ *    status poll tells it the card still shows).
  */
 #include "plat.h"
 #if __has_include("netinst.h")
@@ -177,7 +178,7 @@ static void network(struct plat *P, struct sel_info *in)
     }
     if (in->netinst) {
         pt[n].port = 8090;
-        str_copy(pt[n++].what, "The network installer, while it runs (its page and its uploads)", sizeof(pt[0].what));
+        str_copy(pt[n++].what, "The network installer, while its screen is open (its page and uploads)", sizeof(pt[0].what));
     }
     in->nports = n;
 }
@@ -357,7 +358,7 @@ int sel_netinst(struct sel *S, int op, struct sel_net *st)
     st->state = ns.state, st->done = ns.done, st->total = ns.total, st->rate_kib = ns.rate_kib;
     st->installed = ns.installed;
     str_copy(st->url, ns.url, (int)sizeof(ns.url) < (int)sizeof(st->url) ? (int)sizeof(ns.url) : (int)sizeof(st->url));
-    str_copy(st->token, ns.token, (int)sizeof(ns.token));
+    str_copy(st->where, ns.where, (int)sizeof(ns.where));
     str_copy(st->title, ns.title, (int)sizeof(ns.title));
     str_copy(st->name, ns.name, (int)sizeof(st->name));
     str_copy(st->message, ns.message, (int)sizeof(st->message));

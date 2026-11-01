@@ -9,7 +9,9 @@
 // "remove" (against a fake console following gfs_receiver.lua's rules, as
 // test_gfs_install.py's FakeConsole does), "zip" (a .zip read as a source:
 // its files, and every container's bytes), "http" (a whole install against
-// a real server over HTTP, as the page does it).
+// a real server over HTTP, as the page does it: into saved data, or with
+// "drive" onto that USB drive), "targets" (the page's Install to choices
+// for an info answer).
 "use strict";
 const fs = require("fs");
 const html = fs.readFileSync(process.argv[2], "utf8");
@@ -130,6 +132,8 @@ async function main() {
       const back = new Uint8Array(await (await src.range(job, Math.floor(job.size / 2), job.size - Math.floor(job.size / 2))).arrayBuffer());
       out.containers.push({dir: job.dir, whole: hex(whole), parts: hex(Buffer.concat(parts)), back: hex(back)});
     }
+  } else if (req.op === "targets") {
+    out.options = G.targetOptions(req.info);
   } else if (req.op === "http") {
     Object.assign(out, await http(req));
   } else if (req.op === "live") {
@@ -219,8 +223,10 @@ async function live(req) {
 main().catch(e => { process.stdout.write(JSON.stringify({crash: String(e && e.stack || e)})); process.exitCode = 1; });
 
 // A whole install against a real console, as the page does it (a developer's
-// check on hardware): {"op": "http", "base": "http://CONSOLE:8090", "token":
-// "...", "dir": "path/to/app0" or "zip": "game.zip", "title"?, "force"?, "remove"?}
+// check on hardware): {"op": "http", "base": "http://CONSOLE:8090", "dir":
+// "path/to/app0" or "zip": "game.zip", "title"?, "force"?, "remove"?, "drive"?
+// (onto USB drive N instead of saved data), "pause_at"? (Pause once that many
+// bytes are done), "token"? (manager.lua's)}
 async function http(req) {
   const logs = [], say = m => { logs.push(m); if (!req.quiet) process.stderr.write(m + "\n"); };
   let last = 0;
@@ -228,13 +234,13 @@ async function http(req) {
     fetch: (u, o) => fetch(req.base + u, o),
     async post(url, blob, progress) {
       try {
-        const r = await fetch(req.base + url, {method: "POST", body: blob, headers: {"X-Ghostldr-Token": req.token}});
+        const r = await fetch(req.base + url, {method: "POST", body: blob, headers: req.token ? {"X-Ghostldr-Token": req.token} : {}});
         progress(blob.size);
         let j = null; try { j = await r.json(); } catch (e) { /* none */ }
         return {status: r.status, json: j};
       } catch (e) { say("post: " + e.message); return {status: 0, json: null}; }
     },
-    token: () => req.token, sleep: ms => new Promise(r => setTimeout(r, ms)), log: say, status: say,
+    token: () => req.token || "", sleep: ms => new Promise(r => setTimeout(r, ms)), log: say, status: say,
     fmtSize: n => (n / 1048576).toFixed(1) + " MiB",
   };
   const rx = G.makeRx(env);
@@ -256,13 +262,28 @@ async function http(req) {
   try {
     out.info = await rx.api("GET", "info");
     say("console: " + JSON.stringify(out.info));
-    await rx.api("POST", "auth");
+    if (out.info.token) await rx.api("POST", "auth");
     if (req.remove) { await G.remove(rx, req.remove, knownPrefixes(), say); return out; }
     const sfo = G.parseSfo(await src.bytes("sce_sys/param.sfo"));
     const title = req.title || G.normalizeTitle(sfo.TITLE_ID);
     const pr = PROFILES[title] || {}, pk = pr.pack || {};
     const prefix = pk.prefix || G.defaultPrefix(title);
     const info = {name: pr.name || sfo.TITLE || "", version: pr.version || sfo.APP_VER || ""};
+    const signal = {stopped: false}, progress = [];
+    if (req.drive) {
+      let total = 0;
+      for (const n of src.files.values()) total += n;
+      out.usb = await G.usbInstall(rx, src, req.drive, title, {log: say, step() {}, progress(done) {
+        progress.push(done);
+        if (req.pause_at && done >= req.pause_at) signal.stopped = true;
+      }, async begin() {
+        await rx.api("POST", "begin", {title, name: info.name, total, to: "usb" + req.drive});
+        out.begun = true;
+      }}, signal);
+      if (out.usb.sent) await rx.api("POST", "end", {title, ok: 1});
+      out.progress = progress;
+      return out;
+    }
     const p = G.pack(src.files, src.dirs, title, prefix, pk);
     for (const c of p.containers) c.lid = p.layoutId;
     say(`${title} ${info.name} ${info.version}: ${p.files} files, ${p.total} bytes, ${p.containers.length} containers, layout ${p.layoutId.toString(16)}`);
@@ -283,7 +304,9 @@ async function http(req) {
   } catch (e) {
     out.error = e.message;
     say("error: " + e.message);
+    if (out.begun) try { await rx.api("POST", "end", {title: "", ok: 0}); } catch (e2) { /* gone */ }
+  } finally {
+    out.logs = logs;
   }
-  out.logs = logs;
   return out;
 }

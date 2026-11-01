@@ -1,7 +1,8 @@
 /*
  * The network installer's server (netinst.h, docs/manager.md "Install a
- * game"): the install page and the /api/install/ requests manager.lua
- * answers too, one request at a time on a thread of its own.
+ * game"): the install page, the /api/install/ requests manager.lua answers
+ * too and the /api/install/usb/ ones only it has, one request at a time on
+ * a thread of its own.
  *
  * The page lays the game out; this stores bytes:
  *  - read, probe: files of a container (the catalogue, index headers,
@@ -16,8 +17,16 @@
  *    4 MiB buffers while a second thread writes them, as the installer's
  *    pump does: a container goes in at the slower of the network and the
  *    save writes (about 25 MB/s on a PS5), not their sum.
- * Writes need the token shown on the TV (X-Ghostldr-Token), with a growing
- * wait after wrong ones, as in manager.lua.
+ *  - usb/: onto a USB drive, the dump's files as they are, in
+ *    ghostldr/<TITLE>/app0 on it (where ghostldr.py copy puts them, and the
+ *    selector finds them: docs/usb.md).  usb/begin checks the drive's free
+ *    space (and FAT32's 4 GiB limit) for what is still to send, then the
+ *    page sends small files several to a request (usb/put) and large ones
+ *    each in one or more (usb/file: written in place from off, so a dropped
+ *    connection carries on from what the drive has), eboot.bin last.
+ * No token: every POST is refused unless the TV shows the installer's
+ * screen (ns_seen within NETINST_SEEN_MS; the selector stops the server as
+ * the screen closes).  GETs (the page, info, read) change nothing.
  *
  * No globals and no relocations: it links into the selector module, whose
  * image is read-only and wiped when the selector returns.
@@ -45,13 +54,15 @@ static void LOG(struct netinst *s, const char *f, ...) __attribute__((format(pri
 #define MIN_BLOCKS 96ul
 #define NOT_FOUND 0x809F0008u
 #define NO_SPACE 0x809F000Au
-#define TOKEN_CHARS "ACDEFGHJKLMNPQRTUVWXY34679"
+#define USB_CLUSTER (128ul << 10) /* exFAT's cluster on a large drive: what a file may take past its size */
+#define USB_RESERVE (64ul << 20)  /* left free on a drive */
+#define FAT_MAX ((4ul << 30) - 1)
+#define USB_PATHS 4096            /* paths per usb/sizes */
 
 struct req {
     char method[8];
     char path[64];
     char query[1024];
-    char token[40];
     long length; /* Content-Length, -1 without */
     const unsigned char *pre; /* body bytes that came with the head */
     unsigned long pre_len;
@@ -65,9 +76,7 @@ struct netinst {
     volatile int stop, exited, client;
     volatile int lock;
     struct netinst_status st;
-    char token[12];
-    unsigned fails;
-    long wait_until;
+    volatile long seen;  /* clock_ms of the TV's last poll (ns_seen): POSTs only while it is recent */
     long last_request; /* clock_ms of the last request: BUSY ends after a quiet minute */
     /* the data container being written */
     struct {
@@ -76,6 +85,14 @@ struct netinst {
         unsigned long size, blocks, written;
         long t0;
     } se;
+    /* the install onto a USB drive (usb/begin) */
+    struct {
+        int open;
+        unsigned n, fs;  /* USB drive n */
+        char title[16];
+        char dir[96];    /* its app0: <mount point>/ghostldr/<TITLE>/app0 */
+        char made[320];  /* a folder known to be there (with every one above it) */
+    } usb;
     /* the receive/write ring */
     unsigned char *buf[NETINST_BUFS];
     unsigned long len[NETINST_BUFS];
@@ -362,16 +379,6 @@ static int read_head(struct netinst *s, int c, struct req *r)
             r->length = (long)num(b, &ok);
             if (!ok)
                 r->length = -1;
-        } else if (prefix_ci(l, "x-ghostldr-token:")) {
-            const char *v = l + 17;
-            unsigned k = 0;
-            while (*v && *v != '\r' && k < sizeof(r->token) - 1) {
-                int ch = *v++;
-                if (ch >= 'a' && ch <= 'z')
-                    ch -= 32;
-                if ((ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9'))
-                    r->token[k++] = (char)ch;
-            }
         }
     }
     return 0;
@@ -468,16 +475,25 @@ static int check(struct netinst *s, int c, const char *name, unsigned ops)
     return 1;
 }
 
+static const char *fs_name(unsigned fs) { return fs == NS_FS_EXFAT ? "exFAT" : fs == NS_FS_FAT32 ? "FAT32" : ""; }
+
+/* info: the server, the data container being written (session) and the
+ * USB drives mounted, with their free space now (the page's targets) */
 static void h_info(struct netinst *s, int c)
 {
-    char se[160] = "";
+    char se[160] = "", dr[400] = "";
     if (s->se.open)
         fmt(se, sizeof(se), ",\"session\":{\"c\":\"%s\",\"size\":%lu,\"written\":%lu,\"lid\":\"%s\"}", s->se.name,
             s->se.size, s->se.written, s->se.lid);
+    struct ns_drive d[NS_MAX_DRIVES];
+    int nd = E->drives ? E->drives(E, d, NS_MAX_DRIVES) : 0;
+    for (int i = 0, w = 0; i < nd; i++)
+        w += fmt(dr + w, sizeof(dr) - (unsigned)w, "%s{\"n\":%u,\"fs\":\"%s\",\"free\":%lu,\"total\":%lu}", i ? "," : "",
+                 d[i].n, fs_name(d[i].fs), (unsigned long)d[i].free, (unsigned long)d[i].total);
     reply_json(s, c, 200,
-               "{\"ok\":true,\"server\":\"ghostldr\",\"version\":1,\"swrr\":\"%s\",\"platform\":\"%s\",\"token\":true,"
-               "\"pump\":true,\"max_write\":%u%s}",
-               E->swrr, E->platform, NETINST_BUF, se);
+               "{\"ok\":true,\"server\":\"ghostldr\",\"version\":2,\"swrr\":\"%s\",\"platform\":\"%s\","
+               "\"pump\":true,\"max_write\":%u,\"drives\":[%s]%s}",
+               E->swrr, E->platform, NETINST_BUF, dr, se);
 }
 
 static void h_read(struct netinst *s, int c, const struct req *r)
@@ -682,24 +698,25 @@ static void progress(struct netinst *s, unsigned long base, unsigned long now_by
     unlock(s);
 }
 
-/* receive n body bytes (pre first) and write them to the session's file:
- * 0, 1 (the connection was lost), or < 0 (a write error) */
-static long take(struct netinst *s, int c, const unsigned char *pre, unsigned long pre_len, unsigned long n,
-                 unsigned long base)
+/* receive n body bytes (pre first) and write them to fd, *written counting
+ * them (the TV shows base + *written): 0, 1 (the connection was lost), or
+ * < 0 (a write error) */
+static long take(struct netinst *s, int c, int fd, const unsigned char *pre, unsigned long pre_len, unsigned long n,
+                 unsigned long base, unsigned long *written)
 {
     unsigned long first = pre_len < n ? pre_len : n;
     if (first) {
-        long w = E->write(E, s->se.fd, pre, first);
+        long w = E->write(E, fd, pre, first);
         if (w != (long)first)
             return w < 0 ? w : -NS_EIO;
-        s->se.written += first;
+        *written += first;
     }
     unsigned long rest = n - first;
     if (!rest)
         return 0;
     for (unsigned b = 0; b < NETINST_BUFS; b++)
         s->full[b] = 0;
-    s->wfd = s->se.fd, s->wstatus = 0, s->wwritten = 0, s->wstop = 0, s->wdone = 0;
+    s->wfd = fd, s->wstatus = 0, s->wwritten = 0, s->wstop = 0, s->wdone = 0;
     s->wcount = (rest + NETINST_BUF - 1) / NETINST_BUF;
     if (E->thread(E, writer, s, &s->wthread) != 0)
         return -NS_EAGAIN;
@@ -722,12 +739,12 @@ static long take(struct netinst *s, int c, const unsigned char *pre, unsigned lo
         }
         s->len[b] = k;
         st_(&s->full[b], 1);
-        progress(s, base, s->se.written + s->wwritten);
+        progress(s, base, *written + s->wwritten);
     }
     if (!lost && got < rest)
         __atomic_store_n(&s->wstop, 1, __ATOMIC_RELEASE);
     E->join(E, s->wthread);
-    s->se.written += s->wwritten;
+    *written += s->wwritten;
     if (s->wstatus)
         return s->wstatus;
     return lost || got < rest ? 1 : 0;
@@ -781,7 +798,7 @@ static void h_data(struct netinst *s, int c, const struct req *r)
     fmt(s->st.message, sizeof(s->st.message), "Receiving %s", name);
     unlock(s);
     E->timeouts(E, c, 20);
-    long rc = take(s, c, r->pre, r->pre_len, (unsigned long)r->length, base);
+    long rc = take(s, c, s->se.fd, r->pre, r->pre_len, (unsigned long)r->length, base, &s->se.written);
     progress(s, base, s->se.written);
     if (rc < 0) {
         say(s, "%s: writing failed (%x) after %lu MiB", name, sce_of(rc), s->se.written >> 20);
@@ -815,13 +832,15 @@ static void h_data(struct netinst *s, int c, const struct req *r)
     reply_rc(s, c, 0, extra);
 }
 
+/* begin, end: what is being installed, for the TV; to=usbN: onto USB drive N */
 static void h_note(struct netinst *s, int c, const struct req *r, int end)
 {
-    char title[16], name[64], v[24];
+    char title[16], name[64], v[24], to[8];
     unsigned long total = 0;
     param(r, "title", title, sizeof(title));
     param(r, "name", name, sizeof(name));
     param(r, "ok", v, sizeof(v));
+    param(r, "to", to, sizeof(to));
     param_num(r, "total", &total);
     lock(s);
     if (!end) {
@@ -830,14 +849,19 @@ static void h_note(struct netinst *s, int c, const struct req *r, int end)
         strlcpy(s->st.name, name, sizeof(s->st.name));
         s->st.total = total, s->st.done = 0, s->st.rate_kib = 0;
         s->rate_t = 0;
-        fmt(s->st.message, sizeof(s->st.message), "Installing %s", name[0] ? name : title);
+        s->st.where[0] = 0;
+        if (!strncmp(to, "usb", 3) && to[3] >= '1' && to[3] <= '9' && !to[4])
+            fmt(s->st.where, sizeof(s->st.where), "USB drive %c", to[3]);
+        fmt(s->st.message, sizeof(s->st.message), "Installing %s%s%s", name[0] ? name : title,
+            s->st.where[0] ? " onto " : "", s->st.where);
     } else {
         s->st.state = NETINST_WAITING;
         s->st.rate_kib = 0;
         if (v[0] == '1') {
             s->st.installed++;
             s->st.done = s->st.total;
-            fmt(s->st.message, sizeof(s->st.message), "Installed %s", s->st.name[0] ? s->st.name : title);
+            fmt(s->st.message, sizeof(s->st.message), "Installed %s%s%s", s->st.name[0] ? s->st.name : title,
+                s->st.where[0] ? " on " : "", s->st.where);
         } else {
             fmt(s->st.message, sizeof(s->st.message), "The install of %s stopped: install again to carry on",
                 s->st.name[0] ? s->st.name : title);
@@ -851,30 +875,345 @@ static void h_note(struct netinst *s, int c, const struct req *r, int end)
     reply_json(s, c, 200, "{\"ok\":true}");
 }
 
-/* the token, with a growing wait after wrong ones (manager.lua check_token) */
-static int auth(struct netinst *s, int c, const struct req *r)
+/* ---- onto a USB drive: the dump's files as they are (docs/usb.md) ---- */
+
+/* the TV shows the installer's screen: it asked for the status lately */
+static int tv_open(struct netinst *s)
 {
-    char want[12];
-    unsigned k = 0;
-    for (const char *t = s->token; *t; t++)
-        if (*t != '-')
-            want[k++] = *t;
-    want[k] = 0;
-    if (s->fails >= 30) {
-        reply_err(s, c, 403, "writes are locked: too many wrong tokens (stop and start the installer)");
-        return 0;
-    }
-    if (E->now(E) < s->wait_until) {
-        reply_err(s, c, 429, "too many wrong tokens: wait a little");
-        return 0;
-    }
-    if (r->token[0] && !strcmp(r->token, want))
-        return 1;
-    s->fails++;
-    if (s->fails >= 5)
-        s->wait_until = E->now(E) + (s->fails - 4 >= 9 ? 300 : 1 << (s->fails - 4));
-    reply_err(s, c, 403, r->token[0] ? "wrong token" : "the token is missing: type the one the TV shows");
+    return E->clock_ms(E) - __atomic_load_n(&s->seen, __ATOMIC_ACQUIRE) <= NETINST_SEEN_MS;
+}
+
+/* USB drive n as the system has it now: 1, or 0 when none is mounted as n */
+static int drive_now(struct netinst *s, unsigned long n, struct ns_drive *out)
+{
+    struct ns_drive d[NS_MAX_DRIVES];
+    int k = E->drives ? E->drives(E, d, NS_MAX_DRIVES) : 0;
+    for (int i = 0; i < k; i++)
+        if (d[i].n == n) {
+            *out = d[i];
+            return 1;
+        }
     return 0;
+}
+
+/* bytes as the selector shows them (GB of 2^30 bytes, one decimal) */
+static void gb(char *out, unsigned size, unsigned long b)
+{
+    unsigned long t = (b * 10 + (1ul << 29)) >> 30;
+    fmt(out, size, "%lu.%lu GB", t / 10, t % 10);
+}
+
+static int title_ok(const char *t)
+{
+    unsigned l = (unsigned)strlen(t);
+    for (unsigned i = 0; i < l; i++)
+        if (!((t[i] >= 'A' && t[i] <= 'Z') || (t[i] >= '0' && t[i] <= '9') || t[i] == '_' || t[i] == '-'))
+            return 0;
+    return l >= 1 && l <= 15;
+}
+
+/* a path in the game's folder as the page sends it: names between single
+ * '/', none empty, "." or "..", nothing exFAT can't hold */
+static int rel_ok(const char *p)
+{
+    unsigned l = (unsigned)strlen(p), k = 0;
+    if (l < 1 || l > 240)
+        return 0;
+    for (unsigned i = 0; i <= l; i++) {
+        unsigned char ch = (unsigned char)p[i];
+        if (ch == '/' || !ch) {
+            if (!k || (k == 1 && p[i - 1] == '.') || (k == 2 && p[i - 1] == '.' && p[i - 2] == '.'))
+                return 0;
+            k = 0;
+            continue;
+        }
+        if (ch < 0x20 || ch == 0x7F || ch == '\\' || ch == ':' || ch == '*' || ch == '?' || ch == '"' || ch == '<' ||
+            ch == '>' || ch == '|')
+            return 0;
+        k++;
+    }
+    return 1;
+}
+
+/* the folders of path up to end, below the install's app0: 0, or -errno */
+static int usb_mkdirs(struct netinst *s, const char *path, unsigned end)
+{
+    char b[320];
+    unsigned base = (unsigned)strlen(s->usb.dir);
+    if (end <= base || end >= sizeof(b))
+        return 0;
+    if (!strncmp(s->usb.made, path, end) && (s->usb.made[end] == 0 || s->usb.made[end] == '/'))
+        return 0;
+    for (unsigned i = base + 1; i <= end; i++) {
+        if (i < end && path[i] != '/')
+            continue;
+        memcpy(b, path, i);
+        b[i] = 0;
+        if (!strncmp(s->usb.made, b, i) && (s->usb.made[i] == 0 || s->usb.made[i] == '/'))
+            continue;
+        int rc = E->mkdir(E, b);
+        if (rc < 0 && rc != -NS_EEXIST)
+            return rc;
+    }
+    memcpy(s->usb.made, path, end);
+    s->usb.made[end] = 0;
+    return 0;
+}
+static int usb_parent(struct netinst *s, const char *path)
+{
+    unsigned end = (unsigned)strlen(path);
+    while (end && path[end] != '/')
+        end--;
+    return usb_mkdirs(s, path, end);
+}
+
+/* usb/put and usb/file: only in the install usb/begin started (d, t the same) */
+static int usb_session(struct netinst *s, int c, const struct req *r)
+{
+    char t[16];
+    unsigned long d = 0;
+    param(r, "t", t, sizeof(t));
+    param_num(r, "d", &d);
+    if (!s->usb.open || d != s->usb.n || strcmp(t, s->usb.title)) {
+        reply_json(s, c, 409, "{\"ok\":false,\"error\":\"no install onto that drive was begun: Install again\"}");
+        return 0;
+    }
+    lock(s);
+    s->st.state = NETINST_BUSY;
+    unlock(s);
+    return 1;
+}
+
+/* usb/sizes?d=N&t=TITLE: the size of each file (body: paths, one per line)
+ * in that title's folder on USB drive N, -1 when it isn't there */
+static void h_usb_sizes(struct netinst *s, int c, const struct req *r)
+{
+    char t[16], dir[96], path[320];
+    unsigned long n = 0;
+    struct ns_drive d = {0};
+    param(r, "t", t, sizeof(t));
+    if (!param_num(r, "d", &n) || !title_ok(t))
+        return reply_err(s, c, 400, "bad drive or title");
+    if (!drive_now(s, n, &d))
+        return reply_err(s, c, 404, "that USB drive isn't there (any more)");
+    long len = body(s, c, r);
+    if (len < 0 || len >= (long)NETINST_BUF)
+        return reply_err(s, c, 400, "the body must be under 4 MiB, with Content-Length");
+    s->buf[0][len] = 0;
+    fmt(dir, sizeof(dir), "%s/ghostldr/%s/app0", d.mp, t);
+    char *o = (char *)s->buf[1], *p = (char *)s->buf[0], *end = p + len;
+    unsigned long w = 0, room = NETINST_BUF, k = 0;
+    w += (unsigned long)fmt(o, room, "{\"ok\":true,\"sizes\":[");
+    while (p < end && k < USB_PATHS) {
+        char *q = p;
+        while (q < end && *q != '\n')
+            q++;
+        *q = 0; /* in the buffer: the body is shorter */
+        unsigned long size = 0;
+        long v = -1;
+        if (rel_ok(p) && (unsigned)fmt(path, sizeof(path), "%s/%s", dir, p) < sizeof(path) && E->size(E, path, &size) == 0)
+            v = (long)size;
+        w += (unsigned long)fmt(o + w, room - w, "%s%ld", k ? "," : "", v);
+        k++;
+        p = q + 1;
+    }
+    w += (unsigned long)fmt(o + w, room - w, "]}");
+    reply(s, c, 200, "application/json", o, w, NULL);
+}
+
+/* usb/begin?d=N&t=TITLE&bytes=B&files=F&largest=L: an install onto USB
+ * drive N begins.  B bytes in F files are still to send (the largest L):
+ * they must fit the free space, with room for each file's last cluster and
+ * a little to spare, and FAT32 holds no file of 4 GiB or more.  Then its
+ * folder ghostldr/TITLE/app0 is made.  409 when they don't: nothing
+ * changed. */
+static void h_usb_begin(struct netinst *s, int c, const struct req *r)
+{
+    char t[16], dir[96], a[24], b[24], m[200];
+    unsigned long n = 0, bytes = 0, files = 0, largest = 0;
+    struct ns_drive d = {0};
+    s->usb.open = 0;
+    param(r, "t", t, sizeof(t));
+    if (!param_num(r, "d", &n) || !title_ok(t))
+        return reply_err(s, c, 400, "bad drive or title");
+    param_num(r, "bytes", &bytes);
+    param_num(r, "files", &files);
+    param_num(r, "largest", &largest);
+    if (!drive_now(s, n, &d))
+        return reply_err(s, c, 404, "that USB drive isn't there (any more)");
+    unsigned long need = bytes + files * USB_CLUSTER + USB_RESERVE;
+    if (d.fs == NS_FS_FAT32 && largest > FAT_MAX) {
+        gb(a, sizeof(a), largest);
+        fmt(m, sizeof(m), "USB drive %u is FAT32, which holds no file of 4 GiB or more, and this game has one (%s): use an "
+                          "exFAT drive. Nothing was changed.", d.n, a);
+        say(s, "USB drive %u: FAT32 can't hold %s's largest file (%s)", d.n, t, a);
+        return reply_json(s, c, 409, "{\"ok\":false,\"error\":\"%s\"}", m);
+    }
+    if (d.total && d.free < need) {
+        gb(a, sizeof(a), need), gb(b, sizeof(b), d.free);
+        fmt(m, sizeof(m), "not enough space on USB drive %u: this needs %s and %s is free. Nothing was changed.", d.n, a, b);
+        say(s, "USB drive %u: not enough space for %s (%s needed, %s free)", d.n, t, a, b);
+        return reply_json(s, c, 409, "{\"ok\":false,\"error\":\"%s\",\"need\":%lu,\"free\":%lu}", m, need,
+                          (unsigned long)d.free);
+    }
+    fmt(dir, sizeof(dir), "%s/ghostldr/%s/app0", d.mp, t);
+    strlcpy(s->usb.dir, dir, sizeof(s->usb.dir));
+    strlcpy(s->usb.made, d.mp, sizeof(s->usb.made));
+    int rc = 0;
+    for (unsigned i = (unsigned)strlen(d.mp) + 1; !rc && dir[i - 1]; i++)
+        if (!dir[i] || dir[i] == '/') {
+            char p[96];
+            memcpy(p, dir, i);
+            p[i] = 0;
+            rc = E->mkdir(E, p);
+            rc = rc == -NS_EEXIST ? 0 : rc;
+        }
+    if (rc < 0) {
+        say(s, "USB drive %u: can't make ghostldr/%s/app0 (%x)", d.n, t, sce_of(rc));
+        return reply_rc(s, c, sce_of(rc), NULL);
+    }
+    strlcpy(s->usb.made, dir, sizeof(s->usb.made));
+    s->usb.open = 1, s->usb.n = d.n, s->usb.fs = d.fs;
+    strlcpy(s->usb.title, t, sizeof(s->usb.title));
+    gb(a, sizeof(a), bytes), gb(b, sizeof(b), d.free);
+    LOG(s, "usb: %s onto USB drive %u (%s): %lu files, %s to send, %s free", t, d.n, fs_name(d.fs), files, a, b);
+    char extra[96];
+    fmt(extra, sizeof(extra), ",\"free\":%lu,\"fs\":\"%s\",\"dir\":\"ghostldr/%s/app0\"", (unsigned long)d.free,
+        fs_name(d.fs), t);
+    reply_rc(s, c, 0, extra);
+}
+
+/* usb/put?d=N&t=TITLE&at=A: small files whole, from the body: each a u16
+ * path length, the path, a u32 size (0xFFFFFFFF: a folder) and its bytes,
+ * little endian.  A: the bytes of the game sent before these (the TV's
+ * progress). */
+static void h_usb_put(struct netinst *s, int c, const struct req *r)
+{
+    if (!usb_session(s, c, r))
+        return;
+    unsigned long at = 0;
+    param_num(r, "at", &at);
+    long len = body(s, c, r);
+    if (len < 0)
+        return reply_err(s, c, 400, "the body must be 0 to 4 MiB, with Content-Length");
+    const unsigned char *p = s->buf[0], *end = p + len;
+    unsigned long k = 0, done = 0;
+    char path[320], rel[256];
+    while (p < end) {
+        if (end - p < 6)
+            return reply_err(s, c, 400, "a damaged batch");
+        unsigned pl = (unsigned)(p[0] | p[1] << 8);
+        if (pl >= sizeof(rel) || (unsigned long)(end - p) < 6ul + pl)
+            return reply_err(s, c, 400, "a damaged batch");
+        memcpy(rel, p + 2, pl);
+        rel[pl] = 0;
+        const unsigned char *z = p + 2 + pl;
+        unsigned long size = (unsigned long)z[0] | (unsigned long)z[1] << 8 | (unsigned long)z[2] << 16 |
+                             (unsigned long)z[3] << 24;
+        int dir = size == 0xFFFFFFFFul;
+        z += 4;
+        if (!dir && (unsigned long)(end - z) < size)
+            return reply_err(s, c, 400, "a damaged batch");
+        if (!rel_ok(rel) || (unsigned)fmt(path, sizeof(path), "%s/%s", s->usb.dir, rel) >= sizeof(path))
+            return reply_err(s, c, 400, "bad file name");
+        long rc = dir ? usb_mkdirs(s, path, (unsigned)strlen(path)) : usb_parent(s, path);
+        if (!rc && !dir) {
+            int fd = E->open(E, path, NS_O_WRONLY | NS_O_CREAT | NS_O_TRUNC, 0666);
+            if (fd < 0) {
+                rc = fd;
+            } else {
+                long w = size ? E->write(E, fd, z, size) : 0;
+                int crc = E->close(E, fd);
+                rc = w != (long)size ? (w < 0 ? w : -NS_ENOSPC) : crc;
+            }
+        }
+        if (rc < 0) {
+            say(s, "USB drive %u: writing %.60s failed (%x)", s->usb.n, rel, sce_of(rc));
+            char extra[32];
+            fmt(extra, sizeof(extra), ",\"file\":%lu", k);
+            return reply_rc(s, c, sce_of(rc), extra);
+        }
+        p = z + (dir ? 0 : size);
+        done += dir ? 0 : size;
+        k++;
+        progress(s, at, done);
+    }
+    char extra[32];
+    fmt(extra, sizeof(extra), ",\"files\":%lu", k);
+    reply_rc(s, c, 0, extra);
+}
+
+/* usb/file?d=N&t=TITLE&p=PATH&size=S&off=O&at=A: bytes O... of one file of
+ * S bytes, written in place.  O = 0 creates it (or cuts an old one to
+ * nothing); any other O must be its size on the drive now, else 409 with
+ * that size (written).  Done when S bytes are there.  A: the bytes of the
+ * game before this file (the TV's progress). */
+static void h_usb_file(struct netinst *s, int c, const struct req *r)
+{
+    if (!usb_session(s, c, r))
+        return;
+    char rel[256], path[320];
+    unsigned long size = 0, off = 0, at = 0;
+    if (!param(r, "p", rel, sizeof(rel)) || !rel_ok(rel) ||
+        (unsigned)fmt(path, sizeof(path), "%s/%s", s->usb.dir, rel) >= sizeof(path))
+        return reply_err(s, c, 400, "bad file name");
+    if (!param_num(r, "size", &size) || !param_num(r, "off", &off) || r->length < 0 ||
+        off + (unsigned long)r->length > size)
+        return reply_err(s, c, 400, "bad file request");
+    param_num(r, "at", &at);
+    if (s->usb.fs == NS_FS_FAT32 && size > FAT_MAX)
+        return reply_err(s, c, 409, "FAT32 holds no file of 4 GiB or more");
+    int fd;
+    if (off == 0) {
+        long rc = usb_parent(s, path);
+        fd = rc < 0 ? (int)rc : E->open(E, path, NS_O_WRONLY | NS_O_CREAT | NS_O_TRUNC, 0666);
+    } else {
+        unsigned long have = 0;
+        if (E->size(E, path, &have) != 0)
+            have = 0;
+        if (have != off)
+            return reply_json(s, c, 409, "{\"ok\":false,\"written\":%lu,\"error\":\"the drive has %lu bytes of it\"}",
+                              have, have);
+        fd = E->open(E, path, NS_O_WRONLY, 0);
+        if (fd >= 0 && E->seek(E, fd, (long)off) != (long)off) {
+            E->close(E, fd);
+            fd = -NS_EIO;
+        }
+    }
+    if (fd < 0) {
+        say(s, "USB drive %u: can't write %.60s (%x)", s->usb.n, rel, sce_of(fd));
+        return reply_rc(s, c, sce_of(fd), NULL);
+    }
+    lock(s);
+    fmt(s->st.message, sizeof(s->st.message), "Writing %.90s", rel);
+    unlock(s);
+    E->timeouts(E, c, 20);
+    unsigned long written = off;
+    long rc = take(s, c, fd, r->pre, r->pre_len, (unsigned long)r->length, at, &written);
+    int crc = E->close(E, fd);
+    if (!rc && crc < 0)
+        rc = crc;
+    progress(s, at, written);
+    if (rc < 0) {
+        say(s, "USB drive %u: writing %.60s failed (%x) after %lu MiB", s->usb.n, rel, sce_of(rc), written >> 20);
+        return reply_rc(s, c, sce_of(rc), NULL);
+    }
+    if (rc > 0) {
+        say(s, "%.60s: the connection dropped at %lu MiB: waiting for the browser to carry on", rel, written >> 20);
+        return;
+    }
+    char extra[64];
+    if (written < size) {
+        fmt(extra, sizeof(extra), ",\"written\":%lu", written);
+        return reply_rc(s, c, 0, extra);
+    }
+    unsigned long v = 0;
+    if (E->size(E, path, &v) != 0 || v != size) {
+        say(s, "USB drive %u: %.60s has %lu bytes, not %lu", s->usb.n, rel, v, size);
+        return reply_rc(s, c, 0xFFFFFFFEu, NULL);
+    }
+    fmt(extra, sizeof(extra), ",\"written\":%lu,\"done\":true", size);
+    reply_rc(s, c, 0, extra);
 }
 
 static void handle(struct netinst *s, int c)
@@ -903,15 +1242,14 @@ static void handle(struct netinst *s, int c)
     }
     if (strcmp(r.method, "POST"))
         return reply_err(s, c, 405, "method not allowed");
+    if (!tv_open(s))
+        return reply_err(s, c, 403, "the Install over network screen isn't open on the TV: open it (Settings, Network), "
+                                    "then try again");
     if (!strcmp(r.path, "/api/install/exit")) {
         reply_json(s, c, 200, "{\"ok\":true}");
         s->stop = 1;
         return;
     }
-    if (!auth(s, c, &r))
-        return;
-    if (!strcmp(r.path, "/api/install/auth") || !strcmp(r.path, "/api/auth"))
-        return reply_json(s, c, 200, "{\"ok\":true}");
     if (!strcmp(r.path, "/api/install/probe"))
         return h_probe(s, c, &r);
     if (!strcmp(r.path, "/api/install/data"))
@@ -928,6 +1266,14 @@ static void handle(struct netinst *s, int c)
         return h_note(s, c, &r, 0);
     if (!strcmp(r.path, "/api/install/end"))
         return h_note(s, c, &r, 1);
+    if (!strcmp(r.path, "/api/install/usb/sizes"))
+        return h_usb_sizes(s, c, &r);
+    if (!strcmp(r.path, "/api/install/usb/begin"))
+        return h_usb_begin(s, c, &r);
+    if (!strcmp(r.path, "/api/install/usb/put"))
+        return h_usb_put(s, c, &r);
+    if (!strcmp(r.path, "/api/install/usb/file"))
+        return h_usb_file(s, c, &r);
     reply_err(s, c, 404, "not found");
 }
 
@@ -980,20 +1326,6 @@ static void *serve(void *arg)
 
 /* ---- start, status, stop ---- */
 
-static void make_token(struct netinst *s, char out[12])
-{
-    unsigned long x = E->entropy(E) ^ (unsigned long)E->clock_ms(E) * 0x9E3779B97F4A7C15ul ^ (unsigned long)E->now(E);
-    const char *a = TOKEN_CHARS;
-    unsigned n = (unsigned)strlen(a), k = 0;
-    for (unsigned i = 0; i < 8; i++) {
-        x ^= x >> 29, x *= 0xBF58476D1CE4E5B9ul, x ^= x >> 32, x += E->entropy(E);
-        out[k++] = a[x % n];
-        if (i == 3)
-            out[k++] = '-';
-    }
-    out[k] = 0;
-}
-
 static void release(struct netinst *s)
 {
     struct ns_env *e = s->e;
@@ -1033,15 +1365,14 @@ int ns_start(struct ns_env *e, unsigned short port, struct netinst **out)
         return lfd;
     }
     s->lfd = lfd, s->port = p;
-    make_token(s, s->token);
+    s->seen = E->clock_ms(E); /* the screen is opening */
     if (E->address[0])
         fmt(s->st.url, sizeof(s->st.url), "http://%s:%u/", E->address, p);
     else
         fmt(s->st.url, sizeof(s->st.url), "http://(this console):%u/", p);
-    strlcpy(s->st.token, s->token, sizeof(s->st.token));
     s->st.state = NETINST_WAITING;
     strlcpy(s->st.message, "Open the address in a browser on the same network", sizeof(s->st.message));
-    LOG(s, "serving %s, token %s", s->st.url, s->token);
+    LOG(s, "serving %s while the TV shows it", s->st.url);
     if (E->thread(E, serve, s, &s->thread) != 0) {
         E->sclose(E, lfd);
         s->lfd = -1;
@@ -1066,6 +1397,12 @@ int ns_get_status(struct netinst *s, struct netinst_status *st)
     unlock(s);
     st->size = want;
     return 0;
+}
+
+void ns_seen(struct netinst *s)
+{
+    if (s)
+        __atomic_store_n(&s->seen, s->e->clock_ms(s->e), __ATOMIC_RELEASE);
 }
 
 struct ns_env *ns_env_of(struct netinst *s) { return s->e; }

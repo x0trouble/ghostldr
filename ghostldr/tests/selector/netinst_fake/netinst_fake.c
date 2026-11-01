@@ -46,7 +46,7 @@ int netinst_status(void *handle, struct netinst_status *st)
     }
     st->state = p > 4 && p <= 10 ? NETINST_BUSY : NETINST_WAITING;
     put(st->url, "http://192.168.0.20:8090/", sizeof(st->url));
-    put(st->token, "K7QF-3MXP", sizeof(st->token));
+    put(st->where, "", sizeof(st->where));
     put(st->title, st->state == NETINST_BUSY ? "CUSA00042" : "", sizeof(st->title));
     put(st->name, st->state == NETINST_BUSY ? "Skyward Harbour" : "", sizeof(st->name));
     st->total = st->state == NETINST_BUSY ? 6000000 : 0;

@@ -360,6 +360,14 @@ class Selector(unittest.TestCase):
         self.assertIn("second copy 2: the same game is also in USB drive 1: Ghost of Tsushima (CUSA11456)", p.stderr)
         self.assertIn("second copy 3: the same game is also in USB drive 2: My Games/Ghost", p.stderr)
 
+    def test_preview_network_install_onto_a_drive(self) -> None:
+        """Install over network onto a USB drive: the card says where, no token anywhere; once it is
+        installed the row looks at the drives again (as Triangle does) and the game joins it."""
+        out = self.preview_run("--scene", "settings", "--usb", "--prefix", "preview-usbnet-")
+        self.assertIn("settings: network install finished (1 this session) on USB drive 1: Skyward Harbour", out)
+        for name in ("set-netinst", "set-netinst-busy", "set-netinst-done"):
+            self.assertGreater((self.shots / f"preview-usbnet-{name}.png").stat().st_size, 10000, name)
+
     def preview_run(self, *args: str) -> str:
         p = subprocess.run([str(self.preview), "--font", str(FONT), "--out", str(self.shots), "--prefix", "preview-",
                             "--user", "Tester", "--verify", *args], capture_output=True, text=True)
