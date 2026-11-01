@@ -1,5 +1,5 @@
 /*
- * The ELF loader on the console (elfldr.h, docs/elfldr.md): where payloads
+ * The ELF loader on the console (elfldr.h, docs/developers.md#the-elf-loader): where payloads
  * live, how they run, what they import instead of SWRR's own functions, and
  * freeing them.  No title runs; the core's boot thread serves (elfldr.c)
  * and never goes back to Luac0re's Lua until told to quit, so the JIT

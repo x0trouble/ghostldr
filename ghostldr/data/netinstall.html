@@ -730,7 +730,7 @@ async function fromZip(file) {
   return makeSource("zip", file.name, entries.map(z => ({path: z.name, size: z.usize, zip: z, dir: z.dir})), file);
 }
 
-// ---- the console's API (docs/manager.md "Install a game"): env gives
+// ---- the console's API (docs/using-the-release.md "Install over the network"): env gives
 // fetch(url, opts), post(url, blob, progress(sent), signal) -> {status, json},
 // token() (manager.lua's, "" for the selector's server, which has none), sleep(ms),
 // log(msg, cls), status(msg, cls), fmtSize(n)
@@ -865,7 +865,7 @@ function makeRx(env) {
 
 // ---- onto a USB drive (the selector's server only: /api/install/usb/): the dump's files as they
 // are, in ghostldr/<title>/app0 on the drive, where ghostldr.py copy puts them and the selector
-// finds them (docs/usb.md).  A file the drive has at its size is kept (as copy does); the rest is
+// finds them (docs/using-the-release.md, step 1).  A file the drive has at its size is kept (as copy does); the rest is
 // checked against the drive's free space first, then sent: small files several to a request,
 // large ones each in its own, eboot.bin last, so a copy cut short is no game yet.
 // the page's "Install to" choices from info, [value, label]: saved data first (the default), then

@@ -1,5 +1,5 @@
 """Community memory plans' collection server and daily job
-(tools/contrib/server.py, tools/contrib/sync_plans.py, docs/community-plans.md),
+(tools/contrib/server.py, tools/contrib/sync_plans.py),
 offline.
 
 The server runs on 127.0.0.1, port 0, in a thread, with temporary keys and

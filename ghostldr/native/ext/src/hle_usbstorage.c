@@ -1,5 +1,5 @@
 /*
- * libSceUsbStorage as the title sees it (docs/usb.md).  When the title's
+ * libSceUsbStorage as the title sees it.  When the title's
  * files are on a USB drive, ghostldr holds libSceUsbStorage's session to
  * ShellCore's AutoMounter for the drive's mount (approot.c).  A title's own
  * sceUsbStorageInit would end that session (a second Init leaves the

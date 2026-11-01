@@ -1,5 +1,5 @@
 /*
- * freestanding: a payload with no libc and no imports (docs/elfldr.md),
+ * freestanding: a payload with no libc and no imports,
  * built with LLVM alone.  The ELF loader calls its entry with ps5-payload-
  * sdk's payload_args_t: a userland dlsym, and no kernel access (the kernel
  * R/W fields are empty).  Everything it calls it looks up by name; the

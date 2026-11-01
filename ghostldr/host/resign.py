@@ -6,7 +6,7 @@ system can write.  So the other save's files go into a save your own console
 made for you instead: it keeps its owner and the game's keystone, and the game
 loads it as yours.  SWRR can write a save of another game on a PS5 (13.60
 measured) through a read-write mount the save service binds and then refuses;
-the system commits what was written when SWRR closes (docs/save-resign.md).
+the system commits what was written when SWRR closes (docs/developers.md#tools-on-a-computer).
 
     python3 ghostldr.py resign SOURCE [--game CUSA12345] [--dir NAME]
     python3 ghostldr.py resign SOURCE --check        after SWRR restarted
@@ -298,7 +298,7 @@ def run(src: Source, mode: int, host: str, elfldr_port: int | None, backup: Path
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="ghostldr.py resign", description=__doc__.split("\n\n")[0],
-                                 epilog="docs/save-resign.md walks through it.")
+                                 epilog="docs/developers.md#tools-on-a-computer walks through it.")
     ap.add_argument("source", type=Path, metavar="SOURCE", help="the other save, decrypted: a folder or a zip")
     ap.add_argument("--game", metavar="ID", help="the game's title ID, when the save doesn't say")
     ap.add_argument("--dir", metavar="NAME", help="your save's folder name, when the save doesn't say")

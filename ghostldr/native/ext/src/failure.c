@@ -1,6 +1,5 @@
 /*
- * Every failure said on the TV: what went wrong and what to do
- * (docs/failures.md has them all).  The log keeps the detail; the messages
+ * Every failure said on the TV: what went wrong and what to do.  The log keeps the detail; the messages
  * name where it is.
  *
  *  - Before the title runs (a boot that stops, a crash of the loader): the

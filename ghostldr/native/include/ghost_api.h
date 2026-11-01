@@ -131,7 +131,7 @@ struct ghost_api {
      * back (its budget too) */
     int (*flex_map)(void **addr, size_t len, int prot, int flags);
     int (*flex_unmap)(void *addr, size_t len);
-    /* app roots other than ghostfs (ext/src/approot.c, docs/usb.md):
+    /* app roots other than ghostfs (ext/src/approot.c):
      * directory listings through ghostfs, another provider or the kernel
      * (the game selector lists a library's title folders with it); the
      * title's profile; a provider of /app0; saves in SWRR's containers */
@@ -144,7 +144,7 @@ struct ghost_api {
      * (jitrpc.c; < 0 on errors).  The compiler keeps its own copy.  Like
      * jit_call, only from the boot thread: the calls share one channel. */
     int (*jit_recv_fd)(int compiler_fd);
-    /* the ELF loader (ext/src/elfldr_sys.c, docs/elfldr.md): Orbis modules
+    /* the ELF loader (ext/src/elfldr_sys.c, docs/developers.md#the-elf-loader): Orbis modules
      * parsed and their imports resolved as a title's are, published while
      * they run; the RPC lock around every compiler call once payloads run
      * (their sockets come from the compiler too); payload TLS and threads
@@ -166,11 +166,11 @@ struct ghost_api {
     int (*jit_objects_find)(struct jit_obj *o, u32 n, u32 want);
     void (**payload_fault)(struct module *owner, int sig, u64 rip, u64 addr);
     /* the games an app root that is a folder of games holds (a USB drive:
-     * ext/src/approot.c, docs/usb.md), as the game selector lists them:
+     * ext/src/approot.c), as the game selector lists them:
      * their count, 0 for none */
     int (*library)(const struct lib_title **list);
     /* ---- save tools: a profile's "save_tool" feature (PF_SAVE_TOOL, Apollo
-     * Save Tool; docs/selector.md "Save tools") ----
+     * Save Tool) ----
      * title_user is the core's g_title_user: the user whose saves the title
      * works on (its user service answers, its save lists and mounts); 0: the
      * user running SWRR.  The game selector sets it before the title loads.
@@ -193,7 +193,7 @@ struct ghost_api {
      * them.  Once: later calls return the first one's result.  0, or < 0
      * (the boot then stops). */
     int (*title_pick)(const char *title, int index);
-    /* ---- logs and failures (docs/logs.md, docs/failures.md) ----
+    /* ---- logs and failures ----
      * The log's files and the failure screens' state, shared with the
      * extension (log.c, fail.c; ext/src/logfile.c, failure.c).  NULL when
      * the first log line could not map it. */
@@ -209,7 +209,7 @@ struct ghost_api {
      * < 0 with r->why said.  NULL: this extension has none. */
     int (**reclaim)(struct bx_reclaim *r);
     /* A community memory plan the game selector downloaded for the title it
-     * picks (plansync/, docs/community-plans.md): copied, and used beside the
+     * picks (plansync/): copied, and used beside the
      * profile's REC_SEED records (profile.c profile_seed).  0, or < 0. */
     int (*seed_add)(const char *title, const u8 fingerprint[20], u32 platform, u32 contributors, const void *plan,
                     u32 size);
@@ -218,7 +218,7 @@ struct ghost_api {
      * most max, ended ones included), and one of ghostldr's own added. */
     u32 (*thread_list)(u64 *tids, const char **names, u32 max);
     void (*thread_note)(u64 tid, const char *name);
-    /* ---- the game selector's refresh (docs/selector.md "Refresh") ----
+    /* ---- the game selector's refresh ----
      * A library's games again (ext/src/approot.c): again nonzero looks at
      * the USB drives again (one gone is forgotten, one plugged in since
      * mounted) and lists the games in the same folder on each, in
@@ -260,7 +260,7 @@ struct lib_title {
 };
 
 /* A provider of the title's files other than ghostfs: the extension's usbfs
- * (route B, docs/usb.md).  Registered with ghostfs.c (appfs_register), it
+ * (route B).  Registered with ghostfs.c (appfs_register), it
  * answers every gfs_* call with ghostfs's contracts: open and stat return 1
  * for paths that are not its own, fds are real placeholder fds, errors are
  * SCE kernel errors. */
@@ -308,7 +308,7 @@ struct ext_early {
 };
 typedef const struct ext_early *(*ext_early_fn)(const struct ghost_api *api);
 
-/* The reclaim (docs/compatibility.md, "Large executables").  Every
+/* The reclaim.  Every
  * reference to the emulator's JIT buffers arena_buffers lists is dropped
  * (descriptors in both processes, the compiler's mapping and the view here
  * at each one's home), which gives their JIT memory back; then fresh
@@ -483,7 +483,7 @@ struct ext_reloc {
 };
 
 /* ---- logs and failures (core log.c, fail.c, crash.c; ext/src/logfile.c,
- * failure.c; docs/logs.md, docs/failures.md) ---- */
+ * failure.c) ---- */
 #define LOG_TEMP "/temp0/ghostldr.log" /* every line, from the first one: wiped when the console restarts */
 #define LOG_TEMP_OLD "/temp0/ghostldr.1.log"
 #define LOG_TEMP_CAP (8u << 20)

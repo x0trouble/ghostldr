@@ -1,4 +1,4 @@
-"""tools/make_save.py (docs/autoload.md, "Making the saves"), offline, on a
+"""tools/make_save.py, offline, on a
 made-up Luac0re save: what goes in, param.sfo made anyone's and big enough,
 the other region's relabel, Apollo's USB layout, the refusals, and the saves
 beside a release (make_release.py --save).

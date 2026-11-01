@@ -1,4 +1,4 @@
-"""Games on a USB drive in folders of any name (docs/usb.md), offline:
+"""Games on a USB drive in folders of any name, offline:
 
   - the computer finds the same games, in the same order, with the same
     problems as the console (usb_drive.scan against ext/src/approot.c built

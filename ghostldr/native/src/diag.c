@@ -1,6 +1,5 @@
 /*
- * The PS4 diagnostic (run.py probe --diag; docs/ps4.md says what to send
- * back).  It logs what the loader needs to know about a console and boots
+ * The PS4 diagnostic (run.py probe --diag).  It logs what the loader needs to know about a console and boots
  * nothing: no memory is released, no module placed, the host's threads are
  * only looked at.  The checks are the PS4 boot's own (arena.c with ctx flag
  * CTX_FLAG_PS4, set here on any console), so a PS5 run shows them passing.
@@ -170,7 +169,7 @@ COLD static void diag_memory(void)
     host_dmem_census();
 }
 
-/* ---- 7. PS4: SWRR's budget (docs/ps4.md, the sixth report) ----
+/* ---- 7. PS4: SWRR's budget ----
  * System calls go through this process's own libkernel stub for each number
  * (a PS4 runs a system call only from its own stub).  Numbers, and the
  * prototypes of getid, get_ptype, get_proc_type_info and the resident

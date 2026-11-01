@@ -10,14 +10,14 @@ int fmt(char *buf, size_t size, const char *fmt, ...);
 #define LOG(P, ...) (P)->api->logf("selector: " __VA_ARGS__)
 #define PLAT(S) ((struct plat *)(S)->plat)
 
-/* One installed title: its GFSCATALOG entry (docs/ghostfs-catalogue.md), and
+/* One installed title: its GFSCATALOG entry, and
  * where its art is once its index has been read. */
 #define CAT_INCOMPLETE 1u
 #define CAT_LEGACY 2u
 #define CAT_BAD 4u /* a library's game that can't be booted (note: why) */
 #define CAT_DUP 8u /* a library's second copy of a game (note: which one --title boots) */
 enum { FILE_ICON, FILE_PIC, FILE_SFO, FILE_PIC0, NFILES };
-#define NAME_SFO 1      /* where a title's display name came from (docs/selector.md, "Names") */
+#define NAME_SFO 1      /* where a title's display name came from */
 #define NAME_PROFILE 2
 #define NAME_GIVEN 3
 #define NAME_STORE 4
@@ -65,7 +65,7 @@ struct plat {
     struct cat_title *cat;
     int ncat;
     int ghostfs;          /* titles in save containers; else one title at root */
-    int library;          /* root is a folder of games: lib lists them (docs/usb.md) */
+    int library;          /* root is a folder of games: lib lists them */
     const struct lib_title *lib;
     int catalogue;        /* GFSCATALOG present; else the legacy index */
     int ps4;              /* ctx flag CTX_FLAG_PS4: game dumps are marked (ui_set_platform) */
@@ -155,7 +155,7 @@ void cat_meta_names(struct plat *P, int title, const u8 *head, u64 n);
 const u8 *meta_head(struct sel *S, struct plat *P, int i, u64 *n);
 /* cat.c: sceSaveDataDelete for the user running SWRR (never a SAVE container) */
 int cat_sd_delete(struct plat *P, const char *name);
-/* art.c: Game art (Settings > Game art, docs/selector.md) */
+/* art.c: Game art (Settings > Game art) */
 void art_start(struct plat *P);
 void art_step(struct sel *S, struct plat *P);
 void art_stop(struct plat *P);

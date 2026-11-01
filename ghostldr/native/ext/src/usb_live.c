@@ -1,6 +1,5 @@
 /*
- * A title on a USB drive while it runs (docs/usb.md "Pulling the drive out,
- * rest mode"): the drive may go away under it, pulled out or powered off in
+ * A title on a USB drive while it runs: the drive may go away under it, pulled out or powered off in
  * rest mode, and come back.
  *
  *   - Its fds on the drive are tracked (hle_file.c: usb_live_open and

@@ -490,7 +490,7 @@ function M.index_find(read_at, h, want)
 end
 
 -- ---------------------------------------------------------------- catalogue
--- GFSCATALOG/catalog.bin (docs/ghostfs-catalogue.md on hle/title-agnostic):
+-- GFSCATALOG/catalog.bin (ghostldr/host/gfs_catalog.py):
 -- a 64-byte header "GFSC", version, header_size, entry_size, count, flags,
 -- generation u64; entries of entry_size (192 in version 1): title[16]
 -- prefix[16] index[32] name[64] version[16] layout u64, total u64,
@@ -881,7 +881,7 @@ lockState();(async()=>{if(token){try{await api("POST","/api/auth")}catch(e){toke
 
 -- ---------------------------------------------------------------- network install
 -- The page (/install) packs a game in the browser and stores it through
--- /api/install/* (docs/manager.md "Install a game").  Which containers each
+-- /api/install/* (docs/using-the-release.md "Install over the network").  Which containers each
 -- request may touch: never the host's own save or a title's progress
 -- (*SAVE), never ghostldr's other containers (GLDRCACHE, GLDRCONF...).
 --   data:   <prefix>000..: a title's data containers
@@ -1644,7 +1644,7 @@ async function fromZip(file) {
   return makeSource("zip", file.name, entries.map(z => ({path: z.name, size: z.usize, zip: z, dir: z.dir})), file);
 }
 
-// ---- the console's API (docs/manager.md "Install a game"): env gives
+// ---- the console's API (docs/using-the-release.md "Install over the network"): env gives
 // fetch(url, opts), post(url, blob, progress(sent), signal) -> {status, json},
 // token() (manager.lua's, "" for the selector's server, which has none), sleep(ms),
 // log(msg, cls), status(msg, cls), fmtSize(n)
@@ -1779,7 +1779,7 @@ function makeRx(env) {
 
 // ---- onto a USB drive (the selector's server only: /api/install/usb/): the dump's files as they
 // are, in ghostldr/<title>/app0 on the drive, where ghostldr.py copy puts them and the selector
-// finds them (docs/usb.md).  A file the drive has at its size is kept (as copy does); the rest is
+// finds them (docs/using-the-release.md, step 1).  A file the drive has at its size is kept (as copy does); the rest is
 // checked against the drive's free space first, then sent: small files several to a request,
 // large ones each in its own, eboot.bin last, so a copy cut short is no game yet.
 // the page's "Install to" choices from info, [value, label]: saved data first (the default), then
@@ -2987,7 +2987,7 @@ local function h_delete_title(fd, q)
 end
 
 -- ---------------------------------------------------------------- network install
--- What /install's page asks for (docs/manager.md "Install a game"): the
+-- What /install's page asks for (docs/using-the-release.md "Install over the network"): the
 -- browser lays the game out; these store bytes in containers.  A data
 -- container (<prefix>000..) arrives in one or more requests: the first
 -- (off=0) creates it and opens data.bin, which stays open and mounted between

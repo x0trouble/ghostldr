@@ -1032,7 +1032,7 @@ void ov_ime_end(void)
     unlock();
 }
 
-/* ---- for failure.c (docs/failures.md): a whole page of ghostldr's own ----
+/* ---- for failure.c: a whole page of ghostldr's own ----
  * drawn into a linear A8R8G8B8 buffer it flips itself (after a crash or an
  * exit, over any title), the title's VideoOut handle, the controller, and
  * whether a drawn dialog is open (the title waits for the user, not stuck) */

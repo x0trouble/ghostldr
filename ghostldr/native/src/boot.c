@@ -27,7 +27,7 @@ static void *ghost_main_thread(void *unused)
     return NULL;
 }
 
-/* Save tools (PF_SAVE_TOOL, docs/selector.md): the user whose saves the
+/* Save tools (PF_SAVE_TOOL): the user whose saves the
  * title opens, as the game selector chose it; 0: the user running SWRR. */
 u32 g_title_user;
 
@@ -192,7 +192,7 @@ static int elfldr_select(struct el_select *s)
 }
 
 /* No title: the extension's ELF loader serves payloads until it is told to
- * quit (docs/elfldr.md).  It needs the NID table and the extension's code,
+ * quit (docs/developers.md#the-elf-loader).  It needs the NID table and the extension's code,
  * placed as for a title; then the call returns to Luac0re's loader with the
  * extension's JIT block given back. */
 int ghost_elfldr(void)
@@ -242,7 +242,7 @@ int boot_save_prescan(u32 user, int (*progress)(void *arg, u32 done, u32 total),
 /* CTX_FLAG_RETURN: the boot thread waits while the title runs; once it has
  * ended and the extension has stopped it, ghostfs's mounts, the extension and
  * the direct memory allocated since the boot began go back, and ghostldr.lua
- * opens the game selector again (docs/selector.md).  0: the extension can't,
+ * opens the game selector again.  0: the extension can't,
  * and the title runs on as before. */
 static int title_back(void)
 {

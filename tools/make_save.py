@@ -9,7 +9,7 @@ SAVE is a decrypted SWRR save that Luac0re 2.4b runs from (Luac0re's
 release's savedata folder, or what Apollo's "Copy save game to USB" or
 "Export save game to Zip" makes of one): a folder holding VMC0.card,
 VMC1.card, lua/ and sce_sys/, or a zip with such a folder in it.  Into a
-copy of it go (docs/autoload.md):
+copy of it go (docs/developers.md#making-a-release):
 
     lua/auto.lua                 ghostldr/lua/auto.lua: Luac0re runs it at
                                  OPTIONS > HALL OF FAME instead of its loader
@@ -35,8 +35,8 @@ in it, laid out for the root of a USB drive, and a README.txt:
     ghostldr-<version>-save-EU-CUSA03492.zip                  the same for SLES-50366
 
 The encrypted save is made on a console from the decrypted one
-(ghostldr/host/resign_save.py --anyone --save; docs/autoload.md, "Making the
-saves") and given here with --encrypted-us / --encrypted-eu: the zip
+(ghostldr/host/resign_save.py --anyone --save; docs/developers.md#making-a-release)
+and given here with --encrypted-us / --encrypted-eu: the zip
 resign_save.py writes.  It must be no one's (account 0000000000000000).
 Without it a region's zip holds the decrypted save alone, and this says so.
 Nothing of this computer goes in (make_release.py's check, on every file but
@@ -222,7 +222,7 @@ def readme(version: str, region: str, encrypted: bool) -> bytes:
                  "      encrypted: resign it to your account with Save Wizard, then import it\n"
                  "      from PS4/SAVEDATA/<your account ID, 16 hex>/" + r['title'] + "/\n"
                  "      (PS5: Saved Data (PS4) > Copy or Delete from USB Drive)\n")
-    text += f"\nThe guide: https://github.com/asylumexp/ghostldr/blob/{version}/docs/autoload.md\n"
+    text += f"\nThe guide: https://github.com/asylumexp/ghostldr/blob/{version}/docs/using-the-release.md#a-the-autoloader-save\n"
     return text.encode()
 
 

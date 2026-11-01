@@ -1,4 +1,4 @@
-"""tools/pkgextract-cli (docs/host-tooling.md#pkgextract-cli): builds it and
+"""tools/pkgextract-cli (docs/developers.md "Making a release"): builds it and
 upstream LibOrbisPkg's PkgTool, makes a small fake PKG with PkgTool and
 extracts it: every file back, one folder of it, and the refusals (not a PKG,
 a retail-like PKG, an output folder in use); and the built-in licences.  Skips without a .NET 9 SDK or

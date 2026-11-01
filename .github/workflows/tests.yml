@@ -1,5 +1,5 @@
 # Builds the core, extension and selector and runs the offline tests
-# (docs/architecture.md#tests) on every push to main and on pull requests.
+# on every push to main and on pull requests.
 # On macOS, as the tests' host harnesses expect (BSD sockets, Homebrew's
 # llvm@18), on an Intel runner: the harnesses run the console's x86-64 code,
 # and under Rosetta on the arm64 runners about half the runs failed at random

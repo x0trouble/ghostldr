@@ -461,8 +461,8 @@ static int ext_place(void)
     return 0;
 }
 
-/* App roots on USB drives and folders of titles (ext/src/approot.c,
- * docs/usb.md), before the title's modules load: the image is placed now
+/* App roots on USB drives and folders of titles (ext/src/approot.c), before
+ * the title's modules load: the image is placed now
  * (a new JIT block: the arena is not set up yet); ext_init still runs at
  * ext_start. */
 static const struct ext_early *g_early;

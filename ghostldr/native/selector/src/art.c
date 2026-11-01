@@ -1,5 +1,5 @@
 /*
- * Game art (Settings > Game art, docs/selector.md "Game art"): a game with
+ * Game art (Settings > Game art): a game with
  * no tile picture or backdrop of its own gets them from the services the
  * player gave keys for (plansync/artfetch.c: SteamGridDB, then IGDB),
  * looked up by its name, and keeps them:

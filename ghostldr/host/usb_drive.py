@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Games on a USB drive (docs/usb.md): what the PS5 finds on a drive, putting
+"""Games on a USB drive (docs/using-the-release.md): what the PS5 finds on a drive, putting
 games on it from this computer, and checking what one holds.
 
 The PS5 finds games by what is in their folders, not by the folders' names
@@ -28,7 +28,7 @@ partition table or none.  Progress goes to SWRR's save containers,
 
 DRIVE is where this computer has the drive mounted, or, for a drive plugged
 into the PS5, an FTP address: ghostldr's own server while a title runs,
-ftp://PS5:1212/ghostldr_usb (docs/ftp.md), or a jailbroken PS5's ftpsrv,
+ftp://PS5:1212/ghostldr_usb (docs/using-the-release.md), or a jailbroken PS5's ftpsrv,
 ftp://PS5:2121/mnt/usbN.  The same layout is written through FTP.  Over
 FTP the drive's file system and free space aren't known, so the FAT32 size
 limit and the space check are skipped (the PS5 mounts exFAT and FAT32
@@ -1127,7 +1127,7 @@ def list_drive(d) -> list[Game]:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="games on a USB drive (docs/usb.md); "
+    ap = argparse.ArgumentParser(description="games on a USB drive (docs/using-the-release.md); "
                                  "python3 ghostldr.py copy/check do the same for most uses")
     sub = ap.add_subparsers(dest="cmd", required=True)
     ls = sub.add_parser("list", help="the games on a drive (default: every mounted exFAT or FAT drive)")

@@ -1,5 +1,5 @@
 /*
- * ghostldr's network installer (docs/manager.md "Install a game"): a web
+ * ghostldr's network installer (docs/using-the-release.md "Install over the network"): a web
  * server that installs a game from a browser, into SWRR's saved data or
  * onto a USB drive, started from the game selector's Settings ("Install
  * over network").  It serves the install page

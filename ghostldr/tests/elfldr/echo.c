@@ -1,5 +1,5 @@
 /*
- * echo: a TCP echo server payload for the ELF loader (docs/elfldr.md).
+ * echo: a TCP echo server payload for the ELF loader.
  *
  * Inside SWRR on a PS5, socket() for the internet fails (ENOSYS); the ELF
  * loader gives payloads sockets made by the emulator's JIT compiler

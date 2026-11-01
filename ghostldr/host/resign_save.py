@@ -26,7 +26,7 @@ reported corrupted; make an EU save on EU SWRR.
 
 With --save ZIP (tools/make_save.py's zip for this region) the copy
 gets that save's files instead of the console's Luac0re save's, and its size
-(SAVEDATA_BLOCKS): the autoloader's encrypted save (docs/autoload.md).
+(SAVEDATA_BLOCKS): the autoloader's encrypted save (docs/developers.md#making-a-release).
 --anyone makes it no one's: ACCOUNT_ID 0, and the PARAMS user ID and the
 console's PSID HMAC zeroed, for Save Wizard to resign:
 

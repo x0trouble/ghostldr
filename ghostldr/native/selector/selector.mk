@@ -6,7 +6,7 @@ SEL_SRCS := $(wildcard selector/src/*.c)
 # the tree (test_selector.py builds a test module with a fake: SEL_NET_DIR)
 SEL_NET_DIR ?= netinst
 SEL_NET_SRCS := $(wildcard $(SEL_NET_DIR)/*.c)
-# community memory plans (plansync/, docs/community-plans.md): DNS, HTTPS
+# community memory plans (plansync/): DNS, HTTPS
 # through BearSSL (third_party/bearssl, an archive: only what plansync.c uses
 # is linked), GitHub and the collection server
 SEL_PS_DIR ?= plansync

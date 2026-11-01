@@ -138,7 +138,7 @@ def ghost_install(tmp: Path, title: str = "CUSA99999", sfo: bool = True, prefix:
     return out
 
 
-CAT_HEADER = struct.Struct("<4sIIIIIQ32x")              # docs/ghostfs-catalogue.md (hle/title-agnostic)
+CAT_HEADER = struct.Struct("<4sIIIIIQ32x")              # ghostldr/host/gfs_catalog.py
 CAT_ENTRY = struct.Struct("<16s16s32s64s16sQQIIQ16x")
 
 

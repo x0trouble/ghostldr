@@ -28,7 +28,7 @@
 #include "plat.h"
 #include "plansync.h"
 
-/* community memory plans (plansync/plansync_sel.c, docs/community-plans.md) */
+/* community memory plans (plansync/plansync_sel.c) */
 int plansync_start(const struct ghost_api *api, const char (*titles)[16], unsigned n, int share, int fetch,
                    void **handle);
 const struct ps_job *plansync_poll(void *handle);

@@ -2,7 +2,7 @@
 """Keep the network installer's page and its copies in step.
 
 ghostldr/data/netinstall.html is the page a browser installs games with
-(docs/manager.md "Install a game"): its JavaScript packs a game's folder or
+(docs/using-the-release.md): its JavaScript packs a game's folder or
 .zip the way gfs_pack.py does and installs it the way gfs_install.py does,
 through the console's /api/install/ requests.  Two servers send it:
 manager.lua (Luac0re, standalone) and the extension's netinst.c (the game

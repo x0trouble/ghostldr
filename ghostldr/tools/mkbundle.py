@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The two-file boot's files, from one build (docs/architecture.md, "Two-file boot"):
+"""The two-file boot's files, from one build:
 
     ghostldr.lua         the core, every title profile in ghostldr/data/titles,
                          run.py boot's defaults and the two bundles' pins:
@@ -106,7 +106,7 @@ def make(out: Path) -> dict[str, Path]:
         "-- then one bundle of the same build to the port it opens (the PS5's notification names it):",
         "--   nc PS5 9026 < ghostldr.lua",
         "--   nc PS5 9021 < ghostldr-ext.bin       a game: a USB drive's, else an installed one",
-        "--   nc PS5 9021 < ghostldr-elfldr.bin    the ELF loader (docs/elfldr.md)",
+        "--   nc PS5 9021 < ghostldr-elfldr.bin    the ELF loader (docs/developers.md#the-elf-loader)",
         "-- 9022 instead when 9021 is taken (a jailbroken console's own ELF loader).",
         'GHOSTLDR_MODE = "listen"',
         f'GHOSTLDR_BUILD = "{build.hex()}"',

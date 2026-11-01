@@ -1,7 +1,7 @@
-"""USB drives (docs/usb.md), offline.
+"""USB drives, offline.
 
 The extension's USB storage stack (native/ext/src/usb_bot.c, blk.c,
-part.c, fsutil.c, exfat.c, fat32.c, usbfs.c; docs/usb.md) built for this
+part.c, fsutil.c, exfat.c, fat32.c, usbfs.c) built for this
 machine (native_host/usb_host.c) and run against disk images that macOS's
 own tools make and fill:
 

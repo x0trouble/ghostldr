@@ -38,7 +38,7 @@ bool direct_is_ours(u64 addr);
 
 /* PS4: the companion server runs there (apparently not on a PS5) and the
  * thread writes into its buffer, so the heap cannot go while it runs: on a
- * PS4 v0.1.1 boot it faulted at once (docs/ps4.md).  Stop it the way SWRR's
+ * PS4 v0.1.1 boot it faulted at once.  Stop it the way SWRR's
  * own exit path would; true when nothing of it uses the heap any more. */
 GHOST_COLD static bool ps4_stop_system_services(void)
 {

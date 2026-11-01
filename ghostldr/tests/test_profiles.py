@@ -406,7 +406,7 @@ class CoreProfileTests(unittest.TestCase):
         lines = self.run_host("plan", GHOST_FP, "CUSA11456", env={"GHOSTLDR_TEST_PS4_CAP": "2480"})
         self.assertIn("budget: only 2480 MiB free; streaming pool clamped to 128 MiB", lines)
         self.assertIn("budget: PS4: CUSA11456 needs about 1592 MiB more direct memory than this PS4 lets SWRR "
-                      "allocate: not started (docs/ps4.md)", lines)
+                      "allocate: not started", lines)
         self.assertTrue(any(ln.startswith("patch rc -1 ") for ln in lines), lines)
         self.assertIn("ps4 cap: 0 MiB still taken after the plan", lines)
 
@@ -598,7 +598,7 @@ class AutoMemoryTests(unittest.TestCase):
         return [ln for ln in out.stdout.splitlines() if ln.startswith(("automem:", "run:"))]
 
     def test_a_build_without_a_plan_starts_from_the_community_plan(self) -> None:
-        """REC_SEED (docs/community-plans.md): another console's plan becomes last boot's, and learning goes on."""
+        """REC_SEED: another console's plan becomes last boot's, and learning goes on."""
         self.boot("c1500")
         shared = self.plan.read_bytes()             # one console's plan after its first boot
         self.plan.unlink()                           # this console has none for the build

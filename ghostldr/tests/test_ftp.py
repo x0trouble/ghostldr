@@ -1,4 +1,4 @@
-"""The console's FTP server (native/ext/src/ftp.c, docs/ftp.md), offline.
+"""The console's FTP server (native/ext/src/ftp.c), offline.
 
 ftp.c is built for this machine against ext_native/ftp_host.c, whose
 environment is POSIX over a temporary directory standing in for the

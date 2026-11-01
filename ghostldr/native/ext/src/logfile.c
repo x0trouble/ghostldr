@@ -1,5 +1,5 @@
 /*
- * The log in files (docs/logs.md): /temp0/ghostldr.log always, and this
+ * The log in files: /temp0/ghostldr.log always, and this
  * boot's own file on a USB drive when one is plugged in and the "Log to USB"
  * setting is on.
  *

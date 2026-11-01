@@ -1,5 +1,5 @@
 /*
- * Failures the user sees (docs/failures.md).  A boot that stops says on the
+ * Failures the user sees.  A boot that stops says on the
  * TV what went wrong and what to do: the extension's screens do it
  * (ext/src/failure.c picks the message from the boot's result and the notes
  * below), its code placed for that when it isn't and given back afterwards

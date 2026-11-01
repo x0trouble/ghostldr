@@ -4,7 +4,7 @@
     python3 ghostldr/host/elf_send.py payload.elf [--host PS5] [--port 9021]
     python3 ghostldr/host/elf_send.py --cmd status        # or quit, help
 
-ghostldr's ELF loader (run.py elfldr, docs/elfldr.md) sends the payload's
+ghostldr's ELF loader (run.py elfldr, docs/developers.md#the-elf-loader) sends the payload's
 stdout and stderr back on the connection, with lines of its own that start
 with "[elfldr] ", and closes it once the payload has finished; this prints
 all of it as it comes and exits with the payload's exit code (1 when it was

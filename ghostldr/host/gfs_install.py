@@ -6,7 +6,7 @@ SWRR, or UltraC0re's on 8888 in Jak X, which keeps its own containers.  Sends
 ghostldr/lua/gfs_receiver.lua, which listens on GFS_PORT, then streams each
 container laid out by gfs_pack.py straight from the source files.
 
-Several titles live side by side (docs/ghostfs-catalogue.md): each has its
+Several titles live side by side (docs/developers.md#games-in-saved-data): each has its
 own prefix P, data containers P000.., index PINDEX and progress PSAVE, and
 GFSCATALOG lists them.  Installing a title never deletes another title's
 data: when the console lacks the space, the install stops before sending

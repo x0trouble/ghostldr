@@ -1,5 +1,5 @@
 /*
- * Community memory plans on the console (plansync.h, docs/community-plans.md).
+ * Community memory plans on the console (plansync.h).
  *
  * One job, on a thread of the selector's own:
  *

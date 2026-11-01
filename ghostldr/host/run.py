@@ -4,7 +4,7 @@ Luac0re's in SWRR (TCP 9026) or UltraC0re's in Jak X (TCP 8888), whichever
 answers (--loader-port to choose).
 
     python3 ghostldr/host/run.py probe            # core probe (flags=1)
-    python3 ghostldr/host/run.py probe --diag     # PS4 diagnostic: boots nothing (docs/ps4.md)
+    python3 ghostldr/host/run.py probe --diag     # PS4 diagnostic: boots nothing (docs/compatibility.md)
     python3 ghostldr/host/run.py boot             # load and start the title
     python3 ghostldr/host/run.py elfldr           # no title: run ELF payloads sent to TCP 9021
     python3 ghostldr/host/run.py logs             # only listen for UDP logs
@@ -14,13 +14,13 @@ answers (--loader-port to choose).
 A boot also serves the runtime extension (build/ghostldr/ext.bin: the NID
 table and the extension's HLE code) on TCP 18195; the core fetches it first
 and stops before touching the title when it cannot.  The game selector
-(build/ghostldr/selector.bin, docs/selector.md) is served on TCP 18196: the
+(build/ghostldr/selector.bin, docs/using-the-release.md) is served on TCP 18196: the
 core runs it before the title when more than one title is installed, or with
 --select.
 
 Where the title's files are (--app-root): by default ("auto") the games on
 a USB drive plugged into the PS5, found anywhere on it by their contents
-(docs/usb.md), else the titles installed in SWRR's saved data (ghostfs).
+(docs/using-the-release.md), else the titles installed in SWRR's saved data (ghostfs).
 usb:/ only looks on the drive, ghostfs only at the installed titles.  When
 this computer sees the drive too (--usb-drive, else the only mounted exFAT
 or FAT drive with games), its games' profiles and dumps are used as
@@ -28,14 +28,14 @@ installed ones' are.  ghostldr.py (the repository's top folder) wraps this
 for everyday use: ghostldr.py boot [GAME].
 
 While the title runs, the console serves FTP on TCP 1212 (--ftp-port; 0:
-none; docs/ftp.md): any FTP client, any user and password.  Clients start in
+none; docs/using-the-release.md): any FTP client, any user and password.  Clients start in
 "/", SWRR's sandbox, with every USB drive in it (/ghostldr_usb, /ghostldr_usb2,
 ...), so titles can go onto a drive over the network while a game is
 running; --ftp-saves (or the Settings switch) adds /saves, every logged-in
 user's saves.
 
 run.py elfldr boots no title: the console serves an ELF loader on TCP 9021
-(--elfldr-port) until a client sends "quit" (docs/elfldr.md).  Send payloads
+(--elfldr-port) until a client sends "quit" (docs/developers.md#the-elf-loader).  Send payloads
 with `nc PS5 9021 < payload.elf` or ghostldr/host/elf_send.py; their output
 comes back on the same connection.
 
@@ -80,8 +80,8 @@ import usb_drive
 LOG_PORT = int(os.environ.get("GHOSTLDR_PORT_BASE", "18194"))  # +1, +2 below; another base lets two run.py share a computer
 EXT_PORT = LOG_PORT + 1   # TCP
 SEL_PORT = LOG_PORT + 2   # TCP
-FTP_PORT = 1212           # the console's FTP server (TCP; docs/ftp.md); not ftpsrv's 2121
-ELFLDR_PORT = 9021        # the console's ELF loader (TCP; docs/elfldr.md)
+FTP_PORT = 1212           # the console's FTP server (TCP; docs/using-the-release.md); not ftpsrv's 2121
+ELFLDR_PORT = 9021        # the console's ELF loader (TCP; docs/developers.md#the-elf-loader)
 CTX_FLAG_ELFLDR = 1 << 20  # native/include/ghost.h; the port goes in bits 32-47
 LUA_MAX = 500 * 1024      # Luac0re's and UltraC0re's remote Lua loaders read at most this much
 NAMES = ROOT / "build/nid/known_names.txt"
@@ -119,19 +119,19 @@ HINTS = [
      "the core"),
     ("nothing installed",
      "no game was found on a USB drive in the PS5 and none is installed: copy one onto a drive with "
-     "`python3 ghostldr.py copy DUMP` (docs/usb.md), or install one with `python3 ghostldr.py install DUMP`"),
+     "`python3 ghostldr.py copy DUMP` (docs/using-the-release.md), or install one with `python3 ghostldr.py install DUMP`"),
     ("no USB drive: plug one",
      "the PS5 sees no USB drive: plug the drive into the PS5 (exFAT), restart SWRR and boot again"),
     ("holds no games",
      "`python3 ghostldr.py check` on the computer shows what the PS5 finds on the drive and what is wrong"),
-    # a PS4 lets SWRR allocate about 2.5 GiB of direct memory in all (budget.c, docs/ps4.md)
+    # a PS4 lets SWRR allocate about 2.5 GiB of direct memory in all (budget.c, docs/compatibility.md)
     ("than this PS4 lets SWRR allocate: not started",
      "a PS4 lets SWRR use only about 2.5 GiB of memory (a PS4 game gets 4.5 GiB): its kernel caps PS2 Classics "
      "when they start (firmware 9.60 to 12.50, a Pro included), and nothing inside SWRR raises it. This game "
-     "needs more, so it can't run in SWRR on a PS4 (docs/ps4.md). On a PS5, SWRR gets the whole 4.5 GiB"),
+     "needs more, so it can't run in SWRR on a PS4 (docs/compatibility.md). On a PS5, SWRR gets the whole 4.5 GiB"),
     ("more direct memory than this console hands out",
      "a PS4 lets SWRR use only about 2.5 GiB of memory; this game may stop when it asks for the rest "
-     "(docs/ps4.md)"),
+     "(docs/compatibility.md)"),
 ]
 
 
@@ -519,7 +519,7 @@ def doctor(args) -> int:
 
 
 def elfldr(args, listener: LogListener | None) -> int:
-    """No title: the console serves the ELF loader (docs/elfldr.md) until a
+    """No title: the console serves the ELF loader (docs/developers.md#the-elf-loader) until a
     client sends "quit"; this keeps showing its log until Ctrl+C."""
     if args.no_build:
         missing = [p.relative_to(ROOT) for p in (CORE, LAYOUT, EXT) if not p.exists()]
@@ -636,7 +636,7 @@ def build_parser() -> argparse.ArgumentParser:
                         help="experiment: set the title world's ready flag from the watchdog")
     parser.add_argument("--reclaim", action="store_true",
                         help="the title's code in fresh JIT objects after reclaiming the emulator's JIT buffers, even "
-                             "when it fits them (docs/compatibility.md, Large executables)")
+                             "when it fits them")
     parser.add_argument("--ext-buffer", action="store_true",
                         help="the extension's code at the top of an emulator JIT buffer (as when no new JIT block "
                              "takes it), not in a new JIT block")
@@ -658,28 +658,28 @@ def build_parser() -> argparse.ArgumentParser:
     memory = parser.add_mutually_exclusive_group()
     memory.add_argument("--no-auto-memory", action="store_true",
                         help="a title without a memory plan gets the plain plan-free budget: no lazy commit, no "
-                             "learned plan (docs/compatibility.md#memory-learned-at-run-time)")
+                             "learned plan")
     memory.add_argument("--auto-memory", action="store_true",
                         help="use the automatic memory plan even when the title's profile has a manual one")
     parser.add_argument("--forget-memory", action="store_true",
                         help="start the title's learned memory plan over (it is kept next to its saves)")
     parser.add_argument("--share-memory", action="store_true",
                         help="share the title's learned memory plans with ghostldr's plan collection (the next "
-                             "game selector sends them), as its Settings switch does (docs/community-plans.md)")
+                             "game selector sends them), as its Settings switch does (tools/contrib/README.md)")
     parser.add_argument("--no-community-memory", action="store_true",
                         help="don't download community memory plans, and don't start the title from one")
     parser.add_argument("--keep-remote-play", action="store_true",
                         help="dev: ignore the title's sceRemoteplayProhibit, so a Remote Play viewer keeps its picture")
     parser.add_argument("--select", action="store_true",
                         help="show the game selector even with one title installed or --title given "
-                             "(docs/selector.md); every profile is sent and --title is not used")
+                             "(docs/using-the-release.md); every profile is sent and --title is not used")
     parser.add_argument("--select-font", choices=["auto", "builtin"], default="builtin",
                         help="selector text: the built-in Noto Sans (default), or try the console's system "
                              "font first (auto; experimental: it crashed SWRR on a 13.60 PS5)")
     parser.add_argument("--no-selector", action="store_true", help="do not serve the game selector")
     parser.add_argument("--diag", action="store_true",
                         help="with probe: log what the loader needs to know about this console (PS4 support, "
-                             "docs/ps4.md); boots and releases nothing")
+                             "docs/compatibility.md); boots and releases nothing")
     parser.add_argument("--boot-start-modules", action="store_true",
                         help="start IsGame modules (NpToolkit2, ...) at boot as before, not at the title's "
                              "sceSysmoduleLoadModule")
@@ -690,22 +690,22 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--app-root", default="auto",
                         help="where the title's files are: auto (the default: the games on a USB drive in the "
                         "PS5, else the installed ones), ghostfs (the installed titles), usb:/ or usb:/FOLDER (the "
-                        "games anywhere on a USB drive, or under FOLDER; docs/usb.md), or a directory on a dev "
+                        "games anywhere on a USB drive, or under FOLDER; docs/using-the-release.md), or a directory on a dev "
                         "console, e.g. /data/ghost/app0 (a folder of games works too)")
     parser.add_argument("--usb-drive", type=Path,
                         help="where this computer has the USB drive mounted, for the preflight check and the "
                         "titles' profiles (default: the only mounted exFAT or FAT drive with games)")
     parser.add_argument("--ftp-port", type=int, default=FTP_PORT,
                         help=f"the console's FTP server while the title runs (default {FTP_PORT}; 0: none; "
-                             "docs/ftp.md)")
+                             "docs/using-the-release.md)")
     parser.add_argument("--ftp-saves", action="store_true",
                         help="list every logged-in user's saves in the FTP server's /saves, as the "
-                             "Settings switch does (docs/ftp.md#saves)")
+                             "Settings switch does (docs/using-the-release.md)")
     parser.add_argument("--fetch-art", action="store_true",
                         help="the game selector fetches missing game art with the keys set in Settings > Game art, "
-                             "as its switch does (docs/selector.md#game-art)")
+                             "as its switch does (docs/using-the-release.md)")
     parser.add_argument("--elfldr-port", type=int, default=ELFLDR_PORT,
-                        help=f"elfldr: the console's TCP port for payloads (default {ELFLDR_PORT}; docs/elfldr.md)")
+                        help=f"elfldr: the console's TCP port for payloads (default {ELFLDR_PORT}; docs/developers.md#the-elf-loader)")
     parser.add_argument("--file", type=Path, help="raw Lua file for mode=lua")
     parser.add_argument("--loader-port", type=int, default=0,
                         help="the console's Lua loader: 9026 Luac0re (SWRR), 8888 UltraC0re (Jak X); "

@@ -1,6 +1,6 @@
 /*
- * resign: the console side of `ghostldr.py resign` (docs/save-resign.md), an
- * ELF payload for ghostldr's own ELF loader (docs/elfldr.md: SWRR userland,
+ * resign: the console side of `ghostldr.py resign`, an
+ * ELF payload for ghostldr's own ELF loader (docs/developers.md#the-elf-loader: SWRR userland,
  * no kernel exploit).
  *
  * It listens on TCP 9031 (or the next free port up to 9040; the first line it

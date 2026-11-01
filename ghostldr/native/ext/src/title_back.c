@@ -1,6 +1,5 @@
 /*
- * Back to the game selector (ctx CTX_FLAG_RETURN; docs/selector.md "Back to
- * the game selector").  ghostldr.lua's listen mode on a PS5, with the
+ * Back to the game selector (ctx CTX_FLAG_RETURN).  ghostldr.lua's listen mode on a PS5, with the
  * bundle cached, boots a title and waits in the core (boot.c title_back),
  * which calls title_back on the boot thread.  It waits until the title's run
  * is over, then stops the title in place: SWRR's process, and Luac0re in it,

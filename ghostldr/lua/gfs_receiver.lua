@@ -20,7 +20,7 @@
 -- refuse them, as they refuse the host's own save (SWRR's, or Jak X's with
 -- UltraC0re in it); only DELSAVE (sent on the user's explicit request) deletes
 -- them, never the host's own.
--- Names and formats: docs/ghostfs-catalogue.md.
+-- Names and formats: docs/developers.md#games-in-saved-data.
 --
 -- Save containers: sceSaveDataMount from SWRR's import table (eboot+0x3893F0),
 -- params userId@0, dirName*@0x10, blocks@0x20, mode@0x28 (RO 1, RW 2,

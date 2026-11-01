@@ -1,5 +1,5 @@
 {
- "notes": "Generic values for every title; <TITLE>.json overrides them. See docs/compatibility.md.",
+ "notes": "Generic values for every title; <TITLE>.json overrides them. See docs/developers.md#title-profiles.",
  "pack": {},
  "app_params": {"0": 3},
  "save_blocks": 1024,

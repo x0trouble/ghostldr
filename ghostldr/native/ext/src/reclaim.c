@@ -8,8 +8,7 @@
  * beside the buffers: the console has one global cap on JIT memory, shared
  * by the compiler and SWRR, and the emulator's buffers hold nearly all of it.
  * So every reference to them is dropped first, and an object's memory comes
- * back when its last reference goes.  Measured on a 13.60 PS5
- * (docs/compatibility.md, "Large executables"):
+ * back when its last reference goes.  Measured on a 13.60 PS5:
  *  - the cap is 65 MiB: the buffers (32 + 16 + 8 + 8 MiB) and the core's
  *    256 KiB object leave 768 KiB; with the four dropped, 64.75 MiB of
  *    fresh objects can be made, in any 16 KiB multiple, one of them that

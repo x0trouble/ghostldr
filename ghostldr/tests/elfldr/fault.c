@@ -1,5 +1,5 @@
 /*
- * fault: a payload that crashes on purpose (docs/elfldr.md), to check that
+ * fault: a payload that crashes on purpose, to check that
  * a payload's fault ends its own thread and nothing else: the loader
  * reports it, SWRR and the other payloads go on.  LLVM alone, like
  * freestanding.c.

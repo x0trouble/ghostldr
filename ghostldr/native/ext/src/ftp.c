@@ -1,5 +1,5 @@
 /*
- * ghostldr's FTP server (ftp.h, docs/ftp.md): RFC 959 with what clients
+ * ghostldr's FTP server (ftp.h): RFC 959 with what clients
  * rely on besides: FEAT and OPTS (RFC 2389), EPSV and EPRT (RFC 2428),
  * SIZE, MDTM, REST STREAM, MLST and MLSD (RFC 3659).  Any user name and
  * password are accepted, as by the FTP servers of console homebrew.  Paths

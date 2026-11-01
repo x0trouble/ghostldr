@@ -1,5 +1,5 @@
 /*
- * ghostldr's FTP server on the console (ftp.h, docs/ftp.md): ftp.c's
+ * ghostldr's FTP server on the console (ftp.h): ftp.c's
  * environment over libkernel, started as the title's main thread is about
  * to be created (ext_exports.title_starting) on run.py --ftp-port's port
  * (1212 unless given; 0: no server).

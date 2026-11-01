@@ -32,7 +32,7 @@ The usual way, with a USB drive (exFAT):
 
 ghostldr.py doctor checks this computer and the PS5; ghostldr.py check says
 what the PS5 will find on a drive.  docs/using-the-release.md walks through
-it all, docs/usb.md says what goes on the drive.
+it all, with what goes on the drive.
 """
 
 LOADER_STEPS = ("start SWRR, click the right half of the touchpad at PRESS START, then OPTIONS -> HALL OF FAME, "
@@ -420,7 +420,7 @@ def parser() -> argparse.ArgumentParser:
             "DRIVE is where this computer has the drive mounted (/Volumes/MYDRIVE, E:\\, /media/you/MYDRIVE); "
             "default: the only exFAT or FAT drive mounted. \"ps5\" copies onto the drive in the PS5 over its "
             "FTP server while a game runs there (slower).\n\nThe game goes into ghostldr/<TITLE> on the drive "
-            "unless --folder says otherwise; any folder name works (docs/usb.md).")
+            "unless --folder says otherwise; any folder name works (docs/using-the-release.md).")
     p.add_argument("dump", metavar="DUMP", help="the game's folder: the one with eboot.bin in it (or its parent)")
     p.add_argument("drive", metavar="DRIVE", nargs="?", help="the USB drive (see below)")
     p.add_argument("--folder", metavar="PATH", help="where on the drive, e.g. \"Games/Ghost of Tsushima\"")
@@ -472,7 +472,7 @@ def parser() -> argparse.ArgumentParser:
     p = add("elfldr", "run ELF payloads in SWRR, with no game",
             "Without PAYLOAD: start ghostldr's ELF loader in SWRR (no game, no kernel exploit); it takes payloads "
             "on TCP 9021 until it is sent \"quit\". With PAYLOAD: send it to the loader already running and show "
-            "its output (docs/elfldr.md).",
+            "its output (docs/developers.md#the-elf-loader).",
             "On a jailbroken console, whose own elfldr has 9021, start it with --elfldr-port 9022 and send with "
             "--port 9022. Other options pass through to run.py elfldr and elf_send.py.")
     p.add_argument("payload", metavar="PAYLOAD", nargs="?", help="an ELF to send to the running loader")
@@ -493,7 +493,7 @@ def parser() -> argparse.ArgumentParser:
     p = add("resign", "put another account's save into your own save of the game (PS5)",
             "Resign a PS4 save with no jailbreak: the other save's files, decrypted (an Apollo export, or a folder of "
             "the save's files), go into your own save of the game, which keeps your account and the game's keystone "
-            "(docs/save-resign.md). Start SWRR's loader (HALL OF FAME) first; close SWRR afterwards to save it.",
+            "(docs/developers.md#tools-on-a-computer). Start SWRR's loader (HALL OF FAME) first; close SWRR afterwards to save it.",
             "  ghostldr.py resign SOURCE [--game ID] [--dir NAME]   write it into your save\n"
             "  ghostldr.py resign SOURCE --check                    after SWRR restarted: compare\n\n"
             "python3 ghostldr/host/resign.py --help shows every option.")

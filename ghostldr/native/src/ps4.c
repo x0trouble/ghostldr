@@ -1,5 +1,5 @@
 /*
- * What differs on a PS4 (docs/ps4.md): the decisions, kept free of console
+ * What differs on a PS4: the decisions, kept free of console
  * calls so tests/native_host/ps4_host.c can run them on the computer.
  * arena.c, hostmem.c and diag.c feed them what the consoles report.
  */

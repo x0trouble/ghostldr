@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The daily job's half of community memory plans (docs/community-plans.md):
+"""The daily job's half of community memory plans (tools/contrib/README.md):
 pull what the collection server (server.py) received since the last run,
 pick one plan per eboot fingerprint and platform, and write the repository's
 plans/ folder.  It does not commit; the job that runs it does.

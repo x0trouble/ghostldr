@@ -1,5 +1,5 @@
 /*
- * What the ELF loader takes (elfldr.h, docs/elfldr.md): a payload's format,
+ * What the ELF loader takes (elfldr.h, docs/developers.md#the-elf-loader): a payload's format,
  * checks, layout, relocation and TLS sites.  No console calls: elfldr_sys.c
  * places the result, and tests/test_elfldr.py runs this file on the
  * computer.

@@ -1,4 +1,4 @@
-"""The game selector offline (docs/selector.md).  Needs `make -C ghostldr/native`.
+"""The game selector offline.  Needs `make -C ghostldr/native`.
 
   - preview: the UI code (ui.c, draw.c, font.c, meta.c) built natively
     against a fake catalogue renders its scenes to PNG; every partial redraw
@@ -84,7 +84,7 @@ def param_sfo(entries: list[tuple[str, str]]) -> bytes:
 
 def pack_title(saves: Path, prefix: str, title: str, files: dict[str, bytes], cap: int, index_dir: str,
                incomplete: bool = False) -> tuple[int, int]:
-    """A title in ghostfs's layout (gfs_pack.py, docs/ghostfs-catalogue.md): its files end to end
+    """A title in ghostfs's layout (gfs_pack.py): its files end to end
     over <prefix>000.. (cap bytes each) and a sorted index in index_dir."""
     names = {""}
     for f in files:
@@ -113,7 +113,7 @@ def pack_title(saves: Path, prefix: str, title: str, files: dict[str, bytes], ca
 
 
 def seed_record(platform: int, contributors: int, fingerprint: bytes) -> bytes:
-    """A REC_SEED (profile record 9, docs/community-plans.md): a community memory plan for one build and
+    """A REC_SEED (profile record 9): a community memory plan for one build and
     platform (0 PS5, 1 PS4), then a struct am_plan of 1080 bytes."""
     plan = struct.pack("<QII20s", 0x314D454D52444C47, 1, 1080, fingerprint).ljust(1080, b"\0")
     body = struct.pack("<20sIIII", fingerprint, platform, contributors, len(plan), 0) + plan
@@ -128,7 +128,7 @@ def with_seeds(blob: bytes, records: list[bytes]) -> bytes:
 
 
 def catalogue(saves: Path, titles: list[dict]) -> None:
-    """GFSCATALOG/catalog.bin (docs/ghostfs-catalogue.md): 64-byte header, 192-byte entries by ID."""
+    """GFSCATALOG/catalog.bin: 64-byte header, 192-byte entries by ID."""
     entries = b""
     for t in sorted(titles, key=lambda t: t["id"]):
         e = struct.pack("<16s16s32s64s16sQQII", t["id"].encode(), t["prefix"].encode(), t["index"].encode(),

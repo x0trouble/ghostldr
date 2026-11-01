@@ -350,7 +350,7 @@ static int e_drives(struct ns_env *e, struct ns_drive *d, int max)
         if (S->usb_info(ids[i], b) == 0) {
             u32 features = *(u32 *)(b + 0x330);
             x->total = *(u64 *)b, x->free = *(u64 *)(b + 8);
-            x->fs = features & 0x80 ? NS_FS_EXFAT : features & 0x40 ? NS_FS_FAT32 : NS_FS_UNKNOWN; /* docs/usb.md */
+            x->fs = features & 0x80 ? NS_FS_EXFAT : features & 0x40 ? NS_FS_FAT32 : NS_FS_UNKNOWN; /* docs/using-the-release.md, step 1 */
         }
         /* struct statfs (FreeBSD 9 to 11, 472 bytes; 12's is 2344): f_bsize @16, f_blocks @32, f_bavail @48,
          * f_fstypename[16] @280 */

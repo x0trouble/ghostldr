@@ -19,7 +19,7 @@ the boot group first, then the traced files, then the rest by its groups.
     python3 ghostldr/host/gfs_pack.py                     # the dump in build/ghost/app0
     python3 ghostldr/host/gfs_pack.py --src DIR [--title CUSA12345] [--prefix NAME] [--order FILE]
                                       [--name NAME] [--icon FILE] [--backdrop FILE] [--fetch-art]
-    python3 ghostldr/host/gfs_pack.py --src DIR --usb /Volumes/DRIVE   # onto a USB drive instead (docs/usb.md)
+    python3 ghostldr/host/gfs_pack.py --src DIR --usb /Volumes/DRIVE   # onto a USB drive instead (docs/using-the-release.md)
     python3 ghostldr/host/gfs_pack.py --src DIR --usb ftp://PS5:2121/mnt/usb0   # one plugged into a jailbroken PS5
 
 With --usb the title is not packed into containers: its app0 is copied to
@@ -311,7 +311,7 @@ def main(argv: list[str] | None = None) -> int:
                     "the ID's digits)")
     ap.add_argument("--order", type=Path, help="open-order file to use instead of the profile's (capture_order.py)")
     ap.add_argument("--usb", metavar="DRIVE",
-                    help="copy the title onto a USB drive instead of packing it (docs/usb.md): where this computer "
+                    help="copy the title onto a USB drive instead of packing it (docs/using-the-release.md): where this computer "
                     "has it mounted, or ftp://HOST[:PORT]/mnt/usbN for one plugged into a jailbroken PS5")
     ap.add_argument("--jobs", type=int, default=usb_drive.FTP_JOBS,
                     help=f"with --usb ftp://...: files sent at once (default {usb_drive.FTP_JOBS})")

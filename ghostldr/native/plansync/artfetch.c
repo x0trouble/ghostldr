@@ -1,6 +1,6 @@
 /*
  * Game art from the services the player gave keys for (plansync.h
- * ps_art_fetch, docs/selector.md "Game art"), over plansync.c's HTTPS:
+ * ps_art_fetch), over plansync.c's HTTPS:
  *
  *  - SteamGridDB (one API key, steamgriddb.com > Preferences > API): the
  *    game by name (/api/v2/search/autocomplete/NAME), then an official icon

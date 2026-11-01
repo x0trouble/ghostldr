@@ -1,7 +1,7 @@
 /* Crash reporting: log signal, fault address, registers and a frame-pointer
  * backtrace (as module+offset) before the process dies: to the UDP log and
  * the log files (the drive's synced at the end), then on the TV
- * (struct ghost_diag's show: the extension's screen, docs/failures.md), with
+ * (struct ghost_diag's show: the extension's screen), with
  * a notification first in case no screen can show. */
 #include "ghost_api.h"
 

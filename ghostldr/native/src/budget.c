@@ -116,7 +116,7 @@ COLD static u32 free_holes(struct hole *h, u64 *total)
 /* PS4: how much direct memory of a type the kernel really hands out.  A
  * 12.02 PS4 refused Ghost's 584 MiB streaming pool (EAGAIN) with 1.9 GiB
  * free in one hole, so there the free holes overstate what an application
- * may allocate (docs/ps4.md, the fourth report).  Takes the largest piece
+ * may allocate.  Takes the largest piece
  * the kernel grants (halving down to 2 MiB) until it refuses even that,
  * then releases them all.  0: nothing to measure with. */
 COLD u64 budget_allocatable(int type)
@@ -216,7 +216,7 @@ COLD static int plan_tables(struct module *m, u8 *text, const struct prof_plan *
         s64 short_mib = (s64)absorb->min_mib - pool_mib;
         if (is_ps4() && short_mib > PS4_SHORT_MIB) {
             logf("budget: PS4: %s needs about %ld MiB more direct memory than this PS4 lets SWRR allocate: not "
-                 "started (docs/ps4.md)",
+                 "started",
                  profile_title(), short_mib);
             return -1;
         }

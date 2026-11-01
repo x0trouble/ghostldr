@@ -1,4 +1,4 @@
-"""PS4 support (docs/ps4.md), offline.
+"""PS4 support, offline.
 
 - arena.c and ps4.c in a host process (native_host/arena_host.c) against
   the executable regions a PS5 and a PS4 boot logged and a fake compiler
@@ -342,7 +342,7 @@ class BootContextTests(unittest.TestCase):
         """A PS4 boot stopped for lack of memory gets a plain-language hint."""
         import run
         stop = ("budget: PS4: CUSA11456 needs about 1592 MiB more direct memory than this PS4 lets SWRR "
-                "allocate: not started (docs/ps4.md)")
+                "allocate: not started")
         self.assertIn("2.5 GiB", run.hint_for(stop))
         self.assertIn("On a PS5", run.hint_for(stop))
         warn = ("budget: PS4: the title's plan needs about 172 MiB more direct memory than this console hands "

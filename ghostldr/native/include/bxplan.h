@@ -4,7 +4,7 @@
  * to the code once the buffers are reclaimed (bxplan.c; no console calls).
  * bigexec.c uses it on the console; tools/exec_fit.py is its twin for the
  * fit check before an install, and tests/test_bigexec.py runs both on the
- * same inputs.  docs/compatibility.md, "Large executables".
+ * same inputs.
  */
 #pragma once
 #include "ghost.h"

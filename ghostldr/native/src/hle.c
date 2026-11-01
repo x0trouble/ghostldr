@@ -204,7 +204,7 @@ int hle_alloc_direct(off_t start, off_t end, size_t len, size_t align, int type,
     }
     logf("AllocateDirectMemory(%lx-%lx, len %lx, align %lx, type %d) -> %x phys %lx from eboot+%lx", (u64)start,
          (u64)end, len, align, type, rc, out ? (u64)*out : 0, g_main_mod ? ra - g_main_mod->base : ra);
-    if (rc != 0) { /* refused with a block this large free: the kernel's limit, not the holes (docs/ps4.md) */
+    if (rc != 0) { /* refused with a block this large free: the kernel's limit, not the holes */
         off_t s = 0;
         size_t avail = 0;
         if (K.avail_direct(0, (off_t)real_size, align > 0x4000 ? align : 0x4000, &s, &avail) == 0)

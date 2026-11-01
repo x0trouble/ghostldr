@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The ghostfs title catalogue and container names (docs/ghostfs-catalogue.md).
+"""The ghostfs title catalogue and container names (docs/developers.md#games-in-saved-data).
 
 Several titles live side by side in SWRR's save data.  Each has a prefix
 <P>: data containers <P>000..<P>095, its index <P>INDEX (or the legacy

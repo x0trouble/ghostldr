@@ -1,5 +1,5 @@
 /*
- * hello: the ELF loader's first sample payload (docs/elfldr.md).
+ * hello: the ELF loader's first sample payload.
  *
  * Built with the OpenOrbis PS4 toolchain (Makefile here) and sent as it
  * comes out of the linker:
@@ -11,7 +11,7 @@
  * and then exit code 7, which the loader reports in its last line.  Send
  * the ELF as ld.lld writes it: create-fself sets the TLS segment's
  * alignment to 32, which moves the initial values of thread-local
- * variables that ld.lld placed for a smaller one (docs/elfldr.md).
+ * variables that ld.lld placed for a smaller one.
  *
  * MIT license, like the rest of ghostldr.
  */

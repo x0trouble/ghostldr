@@ -1,5 +1,5 @@
 /*
- * ghostldr's ELF loader (docs/elfldr.md): with no title running, ELF
+ * ghostldr's ELF loader (docs/developers.md#the-elf-loader): with no title running, ELF
  * payloads sent to a TCP port run inside SWRR, several at a time, with
  * SWRR's userland privileges and nothing more.
  *
@@ -66,7 +66,7 @@ void el_log_to(int conn);
  * more bytes are needed to tell, < 0 when it is neither */
 long el_file_size(const unsigned char *b, unsigned long have);
 
-/* The release's two-file boot (docs/architecture.md): a bundle sent to the
+/* The release's two-file boot: a bundle sent to the
  * loader's port is told apart by its magic, taken whole and checked
  * against its own header (sizes, CRC-32s), whichever release it is from */
 #define EL_BUNDLE_MAGIC "GLDRBNDL"
@@ -118,7 +118,7 @@ int pl_build(struct module *m, const struct pl_info *info, u8 *img, pl_resolver 
              u32 n);
 
 /* A freestanding payload's entry gets this in rdi: ps5-payload-sdk's
- * payload_args_t, without kernel access (docs/elfldr.md) */
+ * payload_args_t, without kernel access (docs/developers.md#the-elf-loader) */
 struct el_args {
     int (*sys_dynlib_dlsym)(int handle, const char *name, void *out); /* 0: *out is the address */
     int *rwpipe, *rwpair;     /* NULL: no kernel R/W */

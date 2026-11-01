@@ -27,7 +27,7 @@ SRCS := $(wildcard src/*.c)
 OBJS := $(patsubst src/%.c,$(OUT)/obj/%.o,$(SRCS))
 # extension: ext/src/*.c (one file per HLE family) plus its own copy of rt.c
 EXT_SRCS := $(wildcard ext/src/*.c)
-# route B for titles on USB drives (docs/usb.md): the extension's own USB
+# route B for titles on USB drives: the extension's own USB
 # storage stack over libSceUsbd.  Off unless USB_RAW=1: SWRR's libSceUsbd
 # lists no devices on a 13.60 PS5, and the drive is mounted instead (approot.c)
 USB_RAW_SRCS := $(addprefix ext/src/,usb_bot.c blk.c part.c fsutil.c exfat.c fat32.c usbfs.c usb_sce.c)
@@ -45,7 +45,7 @@ endif
 EXT_OBJS := $(patsubst ext/src/%.c,$(OUT)/ext/%.o,$(EXT_SRCS)) $(OUT)/ext/rt.o
 # The ELF loader's own extension, ext-elfldr.bin (in ghostldr-elfldr.bin):
 # the families a payload binds to and none of a game's, no FTP server
-# (ext/elfldr_only.c stands in for ftp.c) and no NID table (docs/elfldr.md)
+# (ext/elfldr_only.c stands in for ftp.c) and no NID table (docs/developers.md#the-elf-loader)
 ELFLDR_EXT_SRCS := ext_main selftest elfldr elfldr_sys payload ftp_sys hle_file hle_homebrew hle_tsd hle_kernel hle_rawsys \
 	hle_module hle_libc_heap hle_libc_stdio
 # built for size (-Os): it takes new JIT memory, and test_bundle keeps it under 160 KiB

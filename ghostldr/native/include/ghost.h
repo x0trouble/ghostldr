@@ -326,7 +326,7 @@ struct module {
     u8 fingerprint[20];                   /* DT_SCE_FINGERPRINT */
     u64 tls_offset;            /* static TLS: image at thread pointer - tls_offset (tls.c); 0: dynamic */
     struct bx_state *bx;       /* code in whole emulator JIT objects (bigexec.c); NULL: in the arena */
-    /* a payload of the ELF loader (ext/src/elfldr_sys.c, docs/elfldr.md):
+    /* a payload of the ELF loader (ext/src/elfldr_sys.c, docs/developers.md#the-elf-loader):
      * its threads' TLS blocks hold its own image only, and it is finished
      * once none of them runs (tls.c) */
     bool payload;
@@ -417,7 +417,7 @@ u64 budget_allocatable(int type); /* PS4: direct memory of a type the kernel han
 int hle_map_flex(void **addr, size_t len, int prot, int flags); /* flexible memory, backed by direct (hle.c) */
 int budget_flex_unmap(void *addr, size_t len); /* a whole flex-as-direct block back, budget included */
 
-/* ---- ghostfs catalogue: the installed titles (docs/ghostfs-catalogue.md) ---- */
+/* ---- ghostfs catalogue: the installed titles ---- */
 struct gfs_cat_entry {
     char title[16], prefix[16], index[32], name[64], version[16];
     u64 layout_id, total;
@@ -460,7 +460,7 @@ struct prof_hdr {
 #define PF_TRACE_OPENS 16 /* log every file the title opens (capture_order.py) */
 #define PF_OWN 32        /* the title has its own profile */
 #define PF_DIALOG_AUTO 64 /* never draw the title's dialogs: answer them at once (hle_dialog.h) */
-#define PF_SAVE_TOOL 128 /* a save tool (Apollo): the game selector asks whose saves, then scans (docs/selector.md) */
+#define PF_SAVE_TOOL 128 /* a save tool (Apollo): the game selector asks whose saves, then scans */
 struct prof_rec {
     u16 kind, size; /* size includes this header, a multiple of 8 */
     u32 reserved;
@@ -473,7 +473,7 @@ struct prof_rec {
 #define REC_EXEC 6      /* a module's code ranges (bigexec.c) */
 #define REC_NEO 7       /* the plan for a Pro-mode host (Jak X): the title's own Pro memory mode */
 #define REC_PREFIX 8    /* the title's save container prefix, A-Z 0-9 + NUL (a USB drive's title without a prefix file: approot.c) */
-#define REC_SEED 9      /* a community memory plan for one build (automem.c; docs/community-plans.md) */
+#define REC_SEED 9      /* a community memory plan for one build (automem.c) */
 #define REC_PATCH 10    /* bytes of the main executable's text, replaced with the plan (ext/src/ext_main.c) */
 #define REC_SWAP 11     /* a CPU-only heap backed in part, the rest in a swap file (ext/src/swap.c) */
 struct prof_tls {       /* tools/tls_sites.py: one module's thread-pointer loads, checked before patching */
@@ -598,7 +598,7 @@ int ghost_thread_start(void *real, void *thr, const void *attr, void *(*fn)(void
 bool module_has_tpoff(const struct module *m);
 void tls_thread_exit(void);   /* a title thread ends: its TLS blocks go back */
 u64 tls_thunk(u64 fn);        /* fn behind a stub that gives the calling thread its TLS block */
-/* ELF loader payloads (docs/elfldr.md): every thread's static TLS block is
+/* ELF loader payloads (docs/developers.md#the-elf-loader): every thread's static TLS block is
  * size bytes, whoever's thread it is; a thread started for owner (and the
  * threads it starts) gets owner's image and counts in its live_threads */
 void tls_static_reserve(u64 size, u64 align);
@@ -673,8 +673,8 @@ int jit_objects_find(struct jit_obj *o, u32 n, u32 want);
  * --dialog-auto), 8388608 the USB storage session is open (approot.c),
  * 16777216 no log on a USB drive (Settings), 33554432 the extension in an
  * emulator buffer, 67108864 the reclaim forced (bigexec.c), 134217728
- * share learned memory plans, 268435456 no community memory plan (automem.c,
- * docs/community-plans.md), 536870912 back to the game selector when the
+ * share learned memory plans, 268435456 no community memory plan (automem.c),
+ * 536870912 back to the game selector when the
  * title ends (CTX_FLAG_RETURN), 1073741824 the FTP server's /saves
  * (CTX_FLAG_FTP_SAVES), 2147483648 the selector fetches missing game art
  * (CTX_FLAG_FETCH_ART); bits 32-47
@@ -686,18 +686,18 @@ int jit_objects_find(struct jit_obj *o, u32 n, u32 want);
 #define CTX_FLAG_BOOT_START_ALL 1024 /* start IsGame modules at boot too (run.py --boot-start-modules) */
 #define CTX_FLAG_SELECT 2048           /* game selector: show it even when the title is known (run.py --select) */
 #define CTX_FLAG_SEL_FONT_BUILTIN 4096 /* game selector: never try libSceFont (run.py --select-font builtin) */
-#define CTX_FLAG_PS4 8192              /* Luac0re's PLATFORM is "PS4" (ghostldr.lua; docs/ps4.md) */
+#define CTX_FLAG_PS4 8192              /* Luac0re's PLATFORM is "PS4" (ghostldr.lua) */
 #define CTX_FLAG_DIAG 16384            /* run the PS4 diagnostic instead of booting (run.py probe --diag) */
 #define CTX_FLAG_JAKX 32768            /* UltraC0re in Jak X, not Luac0re in SWRR (ghostldr.lua) */
 #define CTX_FLAG_LIBRARY 262144        /* set by the core: app_root is a folder of title folders (the selector reads it) */
 #define CTX_FLAG_USB_SESSION 8388608   /* set by the extension: it opened libSceUsbStorage's session (approot.c), kept when its code is placed again */
-#define CTX_FLAG_NO_USB_LOG 16777216   /* Settings: the log is not written to a USB drive (docs/logs.md; the selector may set it live) */
+#define CTX_FLAG_NO_USB_LOG 16777216   /* Settings: the log is not written to a USB drive (the selector may set it live) */
 #define CTX_FLAG_SHARE_MEM 134217728   /* Settings/run.py --share-memory: log each saved learned plan for the computer to share */
 #define CTX_FLAG_NO_COMMUNITY_MEM 268435456 /* Settings, the game's Information panel, run.py --no-community-memory: no REC_SEED start */
 #define CTX_FLAG_FTP_SAVES 1073741824  /* Settings/run.py --ftp-saves: the FTP server lists every logged-in user's saves in /saves (ftp_saves.c; the selector may set it live) */
-#define CTX_FLAG_FETCH_ART 2147483648u /* Settings > Game art/run.py --fetch-art: the selector fetches missing art with the keys in Settings (docs/selector.md) */
+#define CTX_FLAG_FETCH_ART 2147483648u /* Settings > Game art/run.py --fetch-art: the selector fetches missing art with the keys in Settings */
 /* Back to the game selector (ghostldr.lua's listen mode on a PS5 with the
- * bundle cached; docs/selector.md "Back to the game selector"): ghost_boot
+ * bundle cached): ghost_boot
  * does not return once the title runs, but when it ends (it quits or
  * crashes, or L1+R1+Options+touchpad are held), after the extension stopped
  * it (ext/src/title_back.c) and what it held went back; ghostldr.lua then
@@ -705,7 +705,7 @@ int jit_objects_find(struct jit_obj *o, u32 n, u32 want);
 #define CTX_FLAG_RETURN 536870912
 #define CTX_TITLE_BACK 0xBAC /* ghost_boot's result then */
 #define CTX_FTP_PORT(flags) ((u32)((flags) >> 48)) /* the FTP server's TCP port (run.py --ftp-port; 0: none) */
-#define CTX_FLAG_ELFLDR 1048576 /* no title: serve the ELF loader (run.py elfldr, docs/elfldr.md) */
+#define CTX_FLAG_ELFLDR 1048576 /* no title: serve the ELF loader (run.py elfldr, docs/developers.md#the-elf-loader) */
 #define CTX_ELFLDR_PORT(flags) ((u32)((flags) >> 32) & 0xFFFF) /* its TCP port (run.py elfldr --port) */
 /* The ELF loader in the release's listen mode (ghostldr.lua, with
  * CTX_FLAG_BUNDLE): a full extension of this build is cached, so "boot"
@@ -718,7 +718,7 @@ int jit_objects_find(struct jit_obj *o, u32 n, u32 want);
 #define CTX_CONSOLE_IP_SLOT 64
 #define CTX_BUNDLE_HEADER_SLOT 65
 /* The ELF loader beside the game selector (ghostldr.lua with a cached
- * ghostldr-ext.bin, docs/architecture.md "The bundle cache"): with
+ * ghostldr-ext.bin): with
  * CTX_FLAG_ELFLDR and CTX_ELFLDR_SELECT, the ELF loader serves on a thread
  * of its own while the selector shows; when a title is picked it stops,
  * the extension and its executable memory are given back, and ghostldr.lua
@@ -741,7 +741,7 @@ struct el_select {
     u64 boot;           /* +0x30 ghostldr.lua, second call: boot index/title/user, no selector */
 };
 /* The release's ghostldr.lua received a bundle (ghostldr-ext.bin or
- * ghostldr-elfldr.bin, docs/architecture.md "Two-file boot"): ext_fd and
+ * ghostldr-elfldr.bin): ext_fd and
  * sel_fd hold the addresses of the extension and the selector in flexible
  * memory it mapped (each ALIGN_UP(size, 16 KiB); the core unmaps what it
  * takes and sets the field to -1), and log_fd is the bundle's TCP
@@ -771,7 +771,7 @@ extern const struct host_game *g_hostgame;
 int ghost_diag(void);                  /* diag.c */
 
 /* ---- PS4 (ps4.c: decisions without console calls; arena.c, hostmem.c and
- * diag.c make the calls).  docs/ps4.md.
+ * diag.c make the calls).
  * The first 16 KiB of each emulator JIT program buffer cannot be written
  * through the compiler: Luac0re puts code at +16 KiB, the core sits at the
  * IPU buffer's +16 KiB, and a write at the EE buffer's start killed the
@@ -783,7 +783,7 @@ int ext_fetch(void);     /* receive and verify ext.bin (the NID table lives ther
 int ext_start(void);     /* place, relocate and initialize its code */
 /* app roots other than ghostfs and a title's own directory: USB drives and
  * folders of titles, decided by the extension before the title's modules
- * load (ext/src/approot.c, docs/usb.md).  init: 0 when *root is the title's
+ * load (ext/src/approot.c).  init: 0 when *root is the title's
  * app0, 1 when the game selector picks (then pick), 2 when the app root is
  * "auto" and no drive has a game (then the installed titles: ghostfs), < 0
  * on errors */
@@ -812,7 +812,7 @@ void ext_pad_state(s32 handle, u8 *data); /* a pad state the title read: drawn d
 
 /* ---- game selector (sel.c; module interface in sel_api.h) ---- */
 int sel_run(bool show, char title[16]); /* the chosen title's catalogue index and ID, -1, or SEL_EXIT_* */
-/* The selector's Settings ended the boot (docs/selector.md "Settings"):
+/* The selector's Settings ended the boot:
  * "Close ghostldr", back to Luac0re's loader.  ghost_boot returns it as is. */
 #define SEL_EXIT_LOADER (-20)
 /* a selector came with the boot (sel.c reads it): with one title or none

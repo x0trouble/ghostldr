@@ -1,5 +1,5 @@
 /*
- * App roots on USB drives and folders of games (docs/usb.md), decided
+ * App roots on USB drives and folders of games, decided
  * before the title's modules load: the core places the extension early and
  * calls approot_init through ext_early (ext_main.c) for an app root that is
  * "auto", "usb:..." or a directory without an eboot.bin.  A title's own
@@ -162,7 +162,7 @@ static u64 fn_size_at(u32 handle, u64 addr)
     return 0;
 }
 
-/* why a boot stops, for its message on the TV (ext/src/failure.c, docs/failures.md) */
+/* why a boot stops, for its message on the TV (ext/src/failure.c) */
 __attribute__((noinline, minsize)) static void NOTE(u32 kind, const char *what)
 {
     struct ghost_diag *D = GHOST_DIAG(G);
@@ -209,7 +209,7 @@ static int usb_lib(void)
     }
     logf("approot: libSceUsbStorage %u: RequestMap %lx, RequestMap2 %p", h, rm, (void *)U.map2);
     if (!U.init || !U.list || !U.unmap || !U.map2) {
-        logf("approot: libSceUsbStorage lacks what mounting needs (docs/usb.md)");
+        logf("approot: libSceUsbStorage lacks what mounting needs");
         NOTE(FAIL_DRIVE_REFUSED, "");
         return -1;
     }

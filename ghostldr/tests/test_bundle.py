@@ -1,4 +1,4 @@
-"""The two-file boot offline (docs/architecture.md, "Two-file boot").  Needs
+"""The two-file boot offline.  Needs
 `make -C ghostldr/native` first.
 
 - the files tools/mkbundle.py makes: each bundle's header against its parts,
@@ -10,7 +10,7 @@
 - ghostldr.lua's listen mode under a fake Luac0re (boot_fake.lua, needs a
   desktop Lua 5.3/5.4): the boot context it hands the core, the ports, every
   refusal, the timeout, and what it gives back;
-- the bundle cache (docs/architecture.md, "The bundle cache") under the same
+- the bundle cache under the same
   fake, with save containers in a directory, an instant clock, sockets in
   SWRR and in the JIT compiler, and a scripted core and ELF loader: the
   first boot caches, a later one opens the game selector at once with the
@@ -902,7 +902,7 @@ class BundleCache(FakeConsole):
 @unittest.skipUnless(BUILT, NEED_BUILD)
 @unittest.skipUnless(find_lua(), "needs a desktop Lua 5.3 or 5.4")
 class Autoloader(FakeConsole):
-    """ghostldr/lua/auto.lua in Luac0re's save (docs/autoload.md): Luac0re
+    """ghostldr/lua/auto.lua in Luac0re's save: Luac0re
     runs it instead of its loader; it runs the save's ghostldr.lua with the
     save's ghostldr-ext.bin, then Luac0re's loader on 9026 whatever happens."""
 

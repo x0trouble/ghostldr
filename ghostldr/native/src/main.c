@@ -33,7 +33,7 @@ __attribute__((section(".text.entry"), force_align_arg_pointer, used)) u64 ghost
         return 0xBAD1;
     logf("ghostldr core at %p, ctx flags %lx", __image_start, ctx->flags);
     if (ctx->flags & CTX_FLAG_PS4)
-        logf("ghostldr: on a PS4, firmware %lx.%02lx: experimental, see docs/ps4.md",
+        logf("ghostldr: on a PS4, firmware %lx.%02lx: homebrew and small titles only",
              ctx->size >= __builtin_offsetof(struct boot_ctx, fw) + 8 ? ctx->fw >> 8 : 0,
              ctx->size >= __builtin_offsetof(struct boot_ctx, fw) + 8 ? ctx->fw & 0xff : 0);
     if (ctx->flags & CTX_FLAG_DIAG)

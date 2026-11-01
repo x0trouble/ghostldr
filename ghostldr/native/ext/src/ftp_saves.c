@@ -1,6 +1,6 @@
 /*
  * The FTP server's /saves (Settings > Advanced "Saves in FTP",
- * CTX_FLAG_FTP_SAVES; docs/ftp.md "Saves"): the saves of every user logged
+ * CTX_FLAG_FTP_SAVES): the saves of every user logged
  * in to the console, read-only, through the real save service.
  *
  *     /saves/<user>/<TITLE>/<DIR>/...

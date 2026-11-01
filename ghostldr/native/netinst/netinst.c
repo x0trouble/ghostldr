@@ -1,6 +1,6 @@
 /*
- * The network installer's server (netinst.h, docs/manager.md "Install a
- * game"): the install page, the /api/install/ requests manager.lua answers
+ * The network installer's server (netinst.h, docs/using-the-release.md "Install over
+ * the network"): the install page, the /api/install/ requests manager.lua answers
  * too and the /api/install/usb/ ones only it has, one request at a time on
  * a thread of its own.
  *
@@ -19,7 +19,7 @@
  *    save writes (about 25 MB/s on a PS5), not their sum.
  *  - usb/: onto a USB drive, the dump's files as they are, in
  *    ghostldr/<TITLE>/app0 on it (where ghostldr.py copy puts them, and the
- *    selector finds them: docs/usb.md).  usb/begin checks the drive's free
+ *    selector finds them: docs/using-the-release.md, step 1).  usb/begin checks the drive's free
  *    space (and FAT32's 4 GiB limit) for what is still to send, then the
  *    page sends small files several to a request (usb/put) and large ones
  *    each in one or more (usb/file: written in place from off, so a dropped
@@ -875,7 +875,7 @@ static void h_note(struct netinst *s, int c, const struct req *r, int end)
     reply_json(s, c, 200, "{\"ok\":true}");
 }
 
-/* ---- onto a USB drive: the dump's files as they are (docs/usb.md) ---- */
+/* ---- onto a USB drive: the dump's files as they are (docs/using-the-release.md, step 1) ---- */
 
 /* the TV shows the installer's screen: it asked for the status lately */
 static int tv_open(struct netinst *s)

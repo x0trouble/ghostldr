@@ -484,7 +484,7 @@ void plansync_stop(void *handle)
     v->api->page_free(v, sizeof(*v));
 }
 
-/* ---- the art job (artfetch.c, docs/selector.md "Game art") ----
+/* ---- the art job (artfetch.c) ----
  *
  * The selector asks for one game at a time (artsync_ask: its name, what it
  * lacks) and takes each answer when it is done (artsync_poll, artsync_free);

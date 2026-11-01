@@ -1,6 +1,6 @@
 /*
- * Automatic memory plans: what a manual memory plan gives a title (budget.c,
- * docs/compatibility.md), worked out from the title's own behaviour, for
+ * Automatic memory plans: what a manual memory plan gives a title (budget.c),
+ * worked out from the title's own behaviour, for
  * every title without one.
  *
  *  1. Lazy commit.  Every direct allocation of AM_LAZY_MIN or more is backed
@@ -29,8 +29,8 @@
  *     what the title is told are refused again (the plan-free budget).
  *
  * The first boot of a build is the plan-free budget with lazy commit, or,
- * when the title's profile carries a community plan for the build (REC_SEED,
- * docs/community-plans.md) and CTX_FLAG_NO_COMMUNITY_MEM is clear, that plan
+ * when the title's profile carries a community plan for the build (REC_SEED)
+ * and CTX_FLAG_NO_COMMUNITY_MEM is clear, that plan
  * as last boot's: it keeps learning here.  With CTX_FLAG_SHARE_MEM each save
  * also goes to the outbox the game selector shares from (plan_share).
  * run.py --no-auto-memory turns all of it off, --auto-memory uses it instead

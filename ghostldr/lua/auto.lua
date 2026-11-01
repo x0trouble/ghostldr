@@ -1,4 +1,4 @@
--- ghostldr's autoloader for Luac0re 2.4b (SWRR US CUSA03474 or EU CUSA03492; docs/autoload.md).
+-- ghostldr's autoloader for Luac0re 2.4b (SWRR US CUSA03474 or EU CUSA03492; docs/using-the-release.md).
 --
 -- Luac0re's main.lua runs /savedata0/lua/auto.lua, when its save has one, in
 -- place of its loader on TCP 9026.  This one runs the release's ghostldr.lua

@@ -1,5 +1,5 @@
 /*
- * ghostldr's FTP server (docs/ftp.md): the console's files, a USB drive's
+ * ghostldr's FTP server: the console's files, a USB drive's
  * above all, over FTP while a title runs.
  *
  *   ftp.c       the protocol: sessions, paths, listings, transfers.  Plain

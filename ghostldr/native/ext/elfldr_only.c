@@ -1,6 +1,6 @@
 /*
  * The ELF loader's own extension, build/ghostldr/ext-elfldr.bin (in the
- * release's ghostldr-elfldr.bin; docs/elfldr.md): the families a payload
+ * release's ghostldr-elfldr.bin; docs/developers.md#the-elf-loader): the families a payload
  * binds to (ELFLDR_EXT_SRCS in the Makefile) and none of a game's, no FTP
  * server, no app roots and no NID table.  It runs no title, so nothing here
  * is reached: ext_exports.title_starting (the FTP server, ftp_sys.c) and

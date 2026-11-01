@@ -1,6 +1,6 @@
 /*
  * A swap file for the title's CPU-only heaps (a memory plan's "swap"
- * entries, REC_SWAP; docs/compatibility.md).
+ * entries, REC_SWAP).
  *
  * A planned title's heaps are made whole at boot, so a heap cut to fit SWRR
  * fails the moment the title needs more of it.  An entry names one direct

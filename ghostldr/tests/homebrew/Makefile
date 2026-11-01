@@ -9,7 +9,7 @@
 #   hbrel/app0         hbrel.c (HBRL00106): save data memory, its own prx (hbmod.c:
 #                      sce_module/libhbmod.prx, imported, and libhbdyn.prx, loaded at
 #                      run time) and Piglet's GLES2
-# Pack and install them like any title (docs/compatibility.md, "Homebrew").
+# Pack and install them like any title.
 LLVM ?= /opt/homebrew/opt/llvm@18/bin
 OO_PS4_TOOLCHAIN ?= $(error set OO_PS4_TOOLCHAIN to the OpenOrbis PS4 toolchain)
 CREATE_FSELF ?= $(OO_PS4_TOOLCHAIN)/bin/$(if $(filter Darwin,$(shell uname -s)),macos/create-fself-macos,linux/create-fself)

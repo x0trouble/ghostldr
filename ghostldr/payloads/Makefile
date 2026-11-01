@@ -1,6 +1,6 @@
-# Payloads for ghostldr's own ELF loader (docs/elfldr.md), into build/ghostldr/:
+# Payloads for ghostldr's own ELF loader (docs/developers.md#the-elf-loader), into build/ghostldr/:
 #
-#   resign.elf   the console side of ghostldr.py resign (docs/save-resign.md)
+#   resign.elf   the console side of ghostldr.py resign (docs/developers.md#tools-on-a-computer)
 #
 #   make OO_PS4_TOOLCHAIN=/path/to/PS4Toolchain [LLVM=/path/to/llvm/bin]
 #

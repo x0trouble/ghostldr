@@ -12,7 +12,7 @@
  * code region starts after them.  On PS5 that changes no address (the EE
  * buffer starts 16 KiB below a 64 KiB boundary); on a PS4 it starts on one.
  *
- * PS4 (ctx CTX_FLAG_PS4, docs/ps4.md): nothing is written through the
+ * PS4 (ctx CTX_FLAG_PS4): nothing is written through the
  * compiler before a probe shows it can write there and the bytes show up
  * here (probe: system calls that return EFAULT rather than crash).  A
  * region it cannot write is left alone, or its part the title needs is
@@ -83,7 +83,7 @@ COLD static void ps4_verify(void)
     bool usable = jit_ps4_check() == 0;
     if (!usable)
         logf("arena: PS4: the compiler checks failed (above): no JIT buffer is probed and nothing is written "
-             "through the compiler; the boot stops here (docs/ps4.md)");
+             "through the compiler; the boot stops here");
     for (u32 i = 0; i < g_nrx; i++) {
         struct rx_region *r = &g_rx[i];
         u64 lo = r->start + JIT_BUF_HEADER;

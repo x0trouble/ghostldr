@@ -5,8 +5,8 @@
  * whole as a read-execute view at the module's code addresses, back to back
  * where the code continues.  The rest of its executable segment (read-only
  * data, unwind tables) and its data segments are direct memory next to the
- * views.  bxplan.c decides the layout; docs/compatibility.md, "Large
- * executables".  Only when the modules do not fit the arena as they are, and
+ * views.  bxplan.c decides the layout.  Only when the modules do not fit the
+ * arena as they are, and
  * never on a PS4.
  *
  * What the console allows (PS5 13.60, measured):

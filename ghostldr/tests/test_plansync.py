@@ -1,4 +1,4 @@
-"""The console's community memory plans offline (native/plansync, docs/community-plans.md),
+"""The console's community memory plans offline (native/plansync),
 and Settings > Game art's lookups (artfetch.c) against a fake SteamGridDB, Twitch and IGDB.
 
 plansync.c (DNS, HTTP over BearSSL, GitHub's plans/index.json and plans, the

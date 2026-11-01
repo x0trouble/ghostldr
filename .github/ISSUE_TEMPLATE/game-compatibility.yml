@@ -64,7 +64,7 @@ body:
       label: Save data (optional)
       description: |
         If it crashes or hangs at one point in the game, a save from just before that point lets it be tried without playing up to it. Zip the game's save folder and drag the zip in.
-        To get it: turn on Settings > Advanced > Saves in FTP and copy `/saves/<user>/<title ID>/` over FTP while a game runs ([docs/ftp.md](https://github.com/asylumexp/ghostldr/blob/main/docs/ftp.md#saves)).
+        To get it: turn on Settings > Advanced > Saves in FTP and copy `/saves/<user>/<title ID>/` over FTP while a game runs ([Saves over FTP](https://github.com/asylumexp/ghostldr/blob/main/docs/using-the-release.md#saves-over-ftp)).
         A save's `sce_sys/param.sfo` holds the account ID of the user it belongs to.
 
   - type: checkboxes

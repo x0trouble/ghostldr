@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Community memory plans on this computer (docs/community-plans.md).
+"""Community memory plans on this computer (tools/contrib/README.md).
 
 plans/index.json in the GitHub repository lists the plans players shared;
 sync() keeps a copy of the ones this release doesn't carry in build/plans/
@@ -166,7 +166,7 @@ def seeds(downloaded: bool) -> dict[str, list[dict]]:
 # ---- command line ----
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="community memory plans (docs/community-plans.md)")
+    ap = argparse.ArgumentParser(description="community memory plans (tools/contrib/README.md)")
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("sync", help="refresh build/plans/ from GitHub")
     sub.add_parser("list", help="the plans a boot would carry")

@@ -1,4 +1,4 @@
-"""The ELF loader (docs/elfldr.md), offline.
+"""The ELF loader, offline.
 
 - payload.c (with elf.c for Orbis tables) built for this machine
   (native_host/payload_host.c) on ELFs made here: the formats it takes

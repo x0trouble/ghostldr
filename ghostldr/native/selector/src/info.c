@@ -269,7 +269,7 @@ static void drives(struct plat *P, struct sel_info *in)
             fmt(d->name, sizeof(d->name), "%s%s%s", maker, maker[0] && model[0] ? " " : "", model);
             d->total = *(u64 *)buf, d->free = *(u64 *)(buf + 8);
             features = *(u32 *)(buf + 0x330);
-            d->fs = features & 0x80 ? FS_EXFAT : features & 0x40 ? FS_FAT32 : FS_UNKNOWN; /* as measured (docs/usb.md) */
+            d->fs = features & 0x80 ? FS_EXFAT : features & 0x40 ? FS_FAT32 : FS_UNKNOWN; /* as measured */
         }
         /* its games: in the extension's list under its mount point; else none
          * when the extension looked at the drives (the session is open) */

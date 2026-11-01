@@ -1,7 +1,7 @@
 /*
  * The game selector's catalogue (selector/src/cat.c, with sfo.c and meta.c)
  * built for this machine, reading a library of title folders the way the
- * core hands it over (CTX_FLAG_LIBRARY; docs/usb.md): the console's files
+ * core hands it over (CTX_FLAG_LIBRARY): the console's files
  * are a host directory (tests/ext_native/hostfs.c).  test_usb.py drives it:
  *
  *     cat_host FSROOT APP_ROOT [library GAME...]

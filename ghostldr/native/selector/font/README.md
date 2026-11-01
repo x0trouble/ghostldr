@@ -1,6 +1,6 @@
 # The selector's built-in font
 
-`notosans.glf` holds the outlines of **Noto Sans Regular** that the game selector draws text with when the console's system font can't be opened (docs/selector.md). It's in the selector's own compact format (GLF1, described in `ghostldr/tools/mkfont.py`). It covers Latin, Greek, Cyrillic and common punctuation, about 600 code points, plus the font's kerning between printable ASCII characters.
+`notosans.glf` holds the outlines of **Noto Sans Regular** that the game selector draws text with when the console's system font can't be opened. It's in the selector's own compact format (GLF1, described in `ghostldr/tools/mkfont.py`). It covers Latin, Greek, Cyrillic and common punctuation, about 600 code points, plus the font's kerning between printable ASCII characters.
 
 - **Font:** Noto Sans Regular, Copyright 2022 The Noto Project Authors (https://github.com/notofonts/latin-greek-cyrillic).
 - **License:** SIL Open Font License 1.1, in `OFL.txt` next to this file. It covers `notosans.glf` and the copy of it inside `build/ghostldr/selector.bin`, so a release that ships `selector.bin` ships `OFL.txt` with it. The font has no Reserved Font Name.

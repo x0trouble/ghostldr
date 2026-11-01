@@ -1,5 +1,4 @@
-"""Logs on the USB drive and failures on the TV (docs/logs.md,
-docs/failures.md), built for this machine (ext_native/diag_host.c): the
+"""Logs on the USB drive and failures on the TV, built for this machine (ext_native/diag_host.c): the
 core's log.c with the extension's logfile.c and failure.c, against a fake
 console whose /temp0, USB drives and saved data are a directory.
 

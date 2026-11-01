@@ -1,5 +1,5 @@
 /*
- * The USB storage stack (docs/usb.md, route B): a title's /app0 read from a
+ * The USB storage stack (route B): a title's /app0 read from a
  * USB drive the extension drives itself, through SWRR's libSceUsbd.
  *
  *   usb_bot.c   USB Mass Storage Bulk-Only Transport and the SCSI commands

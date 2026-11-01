@@ -140,7 +140,7 @@ static u64 uc_call(u64 fn, u64 rax, u64 a1, u64 a2, u64 a3, u64 a4)
  * past its "mov rax, N" (the number is in rax), so jit_syscall serves every
  * number.  A PS4 runs it only from that number's own stub, as Luac0re and
  * psfree call them there: getpid's stub with clock_gettime's number in rax
- * stopped the compiler for good (docs/ps4.md, the third report).
+ * stopped the compiler for good.
  * ghostldr.lua passes the compiler's stub for each number the core and the
  * extension use (jit_sysw), and jit_call sends a call of jit_syscall to the
  * stub of the number in rax.  0: no stub for num.

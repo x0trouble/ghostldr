@@ -243,7 +243,7 @@ struct fontcache {
 #define TILE_BIG 384             /* the focused tile (host/gfs_meta.py ICON) */
 #define TILE_SMALL 256
 #define SEL_PS5 0                /* the console (ui_set_platform) */
-#define SEL_PS4 1                /* SWRR gets 2.5 GiB here (docs/ps4.md): game dumps are marked and need a Yes */
+#define SEL_PS4 1                /* SWRR gets 2.5 GiB here: game dumps are marked and need a Yes */
 struct sel {
     void *plat;              /* platform state */
     int platform;            /* SEL_PS5 or SEL_PS4 */
@@ -417,7 +417,7 @@ int sfo_get(const u8 *sfo, u64 size, const char *key, char *out, int cap, s32 *n
  * ID; sfo_id, content_id: param.sfo's TITLE_ID and CONTENT_ID; any may be
  * empty.  A CONTENT_ID from publisher IVnnnn is homebrew; otherwise a retail
  * title ID (CUSA, PLAS, ... and five digits) in any of them is a dump; and
- * anything else homebrew.  Doubt goes to "dump" (docs/selector.md). */
+ * anything else homebrew.  Doubt goes to "dump". */
 int title_is_dump(const char *id, const char *sfo_id, const char *content_id);
 
 /* ---- QR codes (qr.c): version 3-M, up to 42 bytes ---- */

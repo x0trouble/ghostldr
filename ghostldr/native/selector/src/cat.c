@@ -1,6 +1,5 @@
 /*
- * The installed titles and their art, read straight from SWRR's save data
- * (docs/ghostfs-catalogue.md):
+ * The installed titles and their art, read straight from SWRR's save data:
  *
  *  - GFSCATALOG/catalog.bin lists the titles; without it (installs made by
  *    ghostldr v0.1) the only title is the one in GFSINDEX, else GHOSTIDX;
@@ -13,7 +12,7 @@
  * no mount outlives a call.  Outside ghostfs (an app root on /data, dev
  * setups) there is one title, read through the core's file calls; or, when
  * the core says the app root is a library (CTX_FLAG_LIBRARY: games found on
- * a USB drive, docs/usb.md), the games the extension found, in its order
+ * a USB drive), the games the extension found, in its order
  * (ghost_api.library), each with its name and art in its folder's meta.bin
  * when gfs_pack.py --usb wrote one.  Games that can't be booted are listed
  * too, with the reason.
@@ -163,8 +162,8 @@ static void copy_str(char *d, const u8 *s, int n, int cap)
 /* The title's name and flags in its profile: run.py sends every profile it knows
  * (profiles.py boot_bundle) and ghostldr.lua leaves them in the boot
  * context's last u64 (profile.c PROFILE_SLOT); REC_NAME is the profile's
- * "name", a REC_SEED for this console's platform a community memory plan
- * (docs/community-plans.md).  Read in place: blobs of struct prof_hdr +
+ * "name", a REC_SEED for this console's platform a community memory plan.
+ * Read in place: blobs of struct prof_hdr +
  * records, ended by a zero magic. */
 #define PROFILE_SLOT 63
 static void profile_name(struct plat *P, struct cat_title *c)

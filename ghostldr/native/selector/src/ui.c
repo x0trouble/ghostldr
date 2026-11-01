@@ -9,7 +9,7 @@
  * host/gfs_meta.py) is shown.
  *
  * On a PS4 (ui_set_platform) SWRR gets 2.5 GiB of memory, which most games
- * need more than (docs/ps4.md): every game's dump (TITLE_DUMP) has its tile
+ * need more than: every game's dump (TITLE_DUMP) has its tile
  * greyed with a warning sign, and Cross on one asks first, No selected.
  *
  * A save tool (TITLE_SAVE_TOOL: Apollo Save Tool) asks whose saves to open,
@@ -1085,7 +1085,7 @@ int title_copy_of(const struct title *t, char *out, int cap)
     return 1;
 }
 
-/* a title's note (the extension's, docs/usb.md) as a sentence: capitalised,
+/* a title's note (the extension's) as a sentence: capitalised,
  * without "a second copy: " where a chip already says so, and a second
  * copy's said for users (no run.py flag) */
 static const char *note_text(const struct title *t, char *out, int cap)

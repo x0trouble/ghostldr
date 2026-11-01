@@ -2,8 +2,8 @@
 """Names and art for the game selector: a title's <prefix>META container.
 
 Each installed title can have a small save container <P>META next to its
-data (docs/ghostfs-catalogue.md).  Its one file, meta.bin, holds what the
-selector (docs/selector.md) shows for the title, already converted to the
+data (docs/developers.md#games-in-saved-data).  Its one file, meta.bin, holds what the
+selector (docs/using-the-release.md) shows for the title, already converted to the
 sizes it draws, so the selector reads one small file instead of searching
 the title's index and decoding its PNGs:
 
@@ -687,7 +687,7 @@ def write_pack_meta(info: dict, out: Path, prof: dict, name: str | None = None, 
 
 def add_args(ap: argparse.ArgumentParser) -> None:
     """--name, --icon, --backdrop, --fetch-art, --art-dir, --refetch (gfs_pack.py and gfs_install.py)."""
-    g = ap.add_argument_group("the game selector's name and art (docs/selector.md)")
+    g = ap.add_argument_group("the game selector's name and art (docs/using-the-release.md)")
     g.add_argument("--name", help="display name, used when the title has no param.sfo and no profile name")
     g.add_argument("--icon", type=Path, help="tile picture (square; PNG, or JPEG with Pillow), used when the "
                    "title has no sce_sys/icon0.png")

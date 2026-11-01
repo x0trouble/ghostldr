@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The collection server for community memory plans (docs/community-plans.md).
+"""The collection server for community memory plans (tools/contrib/README.md).
 
 Players who share their learned memory plans send them here from the
 computer that starts the boot; the daily job (sync_plans.py) pulls what came

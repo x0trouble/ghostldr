@@ -1,5 +1,5 @@
 /*
- * Community memory plans on the console (docs/community-plans.md): the game
+ * Community memory plans on the console: the game
  * selector downloads the plans other players shared from GitHub, and sends
  * the ones this console learned to the collection server.
  *
@@ -106,7 +106,7 @@ int ps_http(struct ps_env *e, int tls, const char *host, unsigned short port, co
             const char *headers, const void *body, unsigned long blen, unsigned char *out, unsigned long cap,
             unsigned long *len, int *truncated);
 
-/* ---- game art (artfetch.c, docs/selector.md "Game art") ----
+/* ---- game art (artfetch.c) ----
  * A game with no tile picture or backdrop of its own gets them from the
  * services the player gave keys for in Settings > Game art, looked up by
  * its name: SteamGridDB (an official icon, a hero), else IGDB (its cover, an

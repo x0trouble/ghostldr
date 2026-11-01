@@ -1,5 +1,5 @@
 /*
- * ghostldr's ELF loader service (elfldr.h, docs/elfldr.md).
+ * ghostldr's ELF loader service (elfldr.h, docs/developers.md#the-elf-loader).
  *
  * One TCP port, one payload per connection:
  *
@@ -17,7 +17,7 @@
  * the full one), "forget" (the release's ghostldr.lua clears its bundle
  * cache), "log" (this connection gets ghostldr's log) or "help".
  *
- * The release's two-file boot (docs/architecture.md) shares the port: a
+ * The release's two-file boot shares the port: a
  * bundle (ghostldr-ext.bin, ghostldr-elfldr.bin) is told apart by its
  * magic, taken whole, checked against its own header (sizes, CRC-32s) and
  * handed to ghostldr.lua (EL_BUNDLE), which caches it: it is applied on the

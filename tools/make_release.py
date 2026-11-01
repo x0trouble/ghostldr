@@ -16,7 +16,7 @@ into DIR (default build/release):
     ghostldr-<version>.zip                                the five above and their SHA256SUMS.txt, flat
     ghostldr-<version>-save-<US|EU>-<TITLE>.zip           with --save: the autoloader's saves, one zip per
                                                           region: decrypted (Apollo) and, given, encrypted
-                                                          (tools/make_save.py, docs/autoload.md)
+                                                          (tools/make_save.py, docs/developers.md#making-a-release)
 
 The release page gets the zip, the five files one by one, the saves and
 SHA256SUMS.txt.

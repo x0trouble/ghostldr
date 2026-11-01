@@ -9,8 +9,7 @@
  * them on the console over the network.
  *
  * Several titles can be installed side by side, each with its own prefix
- * and index container <prefix>INDEX, listed in GFSCATALOG
- * (docs/ghostfs-catalogue.md); only the booted title's containers are
+ * and index container <prefix>INDEX, listed in GFSCATALOG; only the booted title's containers are
  * mounted.
  *
  * Here: the index is loaded at boot; opening /app0/... gives the caller a
@@ -566,7 +565,7 @@ COLD int gfs_mount_title(const char *title)
 {
     const struct gfs_cat_entry *e = NULL;
     for (int pass = 0; pass < 2 && (!e || (e->flags & GFS_CAT_INCOMPLETE)); pass++) {
-        if (pass) { /* installed since it was read: the selector's network install (docs/selector.md) */
+        if (pass) { /* installed since it was read: the selector's network install */
             page_free((void *)g_cat, 0);
             g_cat = NULL, g_cat_n = 0, g_cat_read = false, e = NULL;
         }

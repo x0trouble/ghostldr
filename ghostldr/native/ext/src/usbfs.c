@@ -1,6 +1,6 @@
 /*
- * usbfs: a title's /app0 served from a folder on a USB drive (docs/usb.md,
- * route B), with the semantics ghostfs gives titles:
+ * usbfs: a title's /app0 served from a folder on a USB drive (route B),
+ * with the semantics ghostfs gives titles:
  *
  *   - open, stat and the fd calls answer with ghostfs's contracts (struct
  *     appfs_ops in ghost_api.h): 1 for paths that are not usbfs's, SCE

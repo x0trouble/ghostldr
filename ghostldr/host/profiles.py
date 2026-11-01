@@ -7,7 +7,7 @@ container size, its memory plan (only for titles that need more than SWRR's
 budget gives them), title-specific diagnostics, and HLE rules that answer
 single imports without writing C.  default.json holds the generic values;
 <TITLE>.json overrides them (objects merge key by key, everything else
-replaces).  docs/compatibility.md explains every field.
+replaces).  docs/developers.md#title-profiles explains every field.
 
 A profile that names an eboot fingerprint is bound to that build: on any
 other build of the title the core uses the generic defaults.  A memory plan

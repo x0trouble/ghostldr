@@ -19,16 +19,15 @@
 --              the extension's executable memory goes, and a second call
 --              boots the pick.  A cached ghostldr-elfldr.bin starts the ELF
 --              loader alone.  A bundle sent to the ELF loader (any build's,
---              checked against its own header) is cached for the next boot
---              (docs/architecture.md, "Two-file boot" and "The bundle
---              cache").  A PS4 or Jak X opens the selector without it.  Nothing of SWRR's is
+--              checked against its own header) is cached for the next boot.
+--              A PS4 or Jak X opens the selector without it.  Nothing of SWRR's is
 --              touched before a bundle is in hand.  The prompt and every
 --              outcome show on the TV, in Luac0re's message dialog, as well
 --              as in a notification and on the bundle's connection.
 --              The autoloader (auto.lua, in Luac0re's save) runs this from
 --              the save with GHOSTLDR_BUNDLE_FILE set: with nothing of this
 --              build cached, that file is the bundle (and is cached), with
---              no computer (docs/autoload.md).
+--              no computer (docs/using-the-release.md).
 --   "clear-cache"  run.py clear-cache: delete the cache, nothing else.
 --              GHOSTLDR_CLEAR_CACHE = true before the release's ghostldr.lua
 --              does the same, then carries on without one.
@@ -42,7 +41,7 @@
 --                       this script adds 8192 on a PS4 (Luac0re's PLATFORM)
 --                       and 32768 under UltraC0re
 --   GHOSTLDR_APP_ROOT   where the title's app0 is: "ghostfs", a directory, or
---                       "usb:/path" on a USB drive (docs/usb.md)
+--                       "usb:/path" on a USB drive (docs/using-the-release.md)
 --   GHOSTLDR_EXT_PORT / GHOSTLDR_EXT_SIZE / GHOSTLDR_EXT_CRC
 --   GHOSTLDR_EXT_SHA256 (the blob's SHA-256 hex; the core pins its
 --   first 24 bytes against the served blob after the CRC screen)

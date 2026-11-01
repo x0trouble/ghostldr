@@ -3,9 +3,10 @@
 Players who opt in share the memory plans their consoles learned; the
 console's game selector sends them to the collection server (`server.py`),
 and a daily job (`sync_plans.py`) pulls what came in, picks one plan per
-eboot fingerprint and platform and writes `plans/` in this repository. The
-formats, the API and the `plans/` layout are in
-[docs/community-plans.md](../../docs/community-plans.md).
+eboot fingerprint and platform and writes `plans/` in this repository. On the
+console, Settings > Advanced has the two switches (**Share learned memory
+plans**, off; **Use community memory plans**, on); a plan is
+`struct am_plan` in `ghostldr/native/src/automem.c`.
 
 Both are Python 3.11, standard library only. Tests:
 `python3 -m unittest discover -s ghostldr/tests -p test_contrib.py`.
@@ -69,3 +70,23 @@ that did not run out of memory and stayed up at least 2 minutes, then the
 most boots, then the latest, and rewrites only the files that changed. With
 nothing new it prints `no new submissions` and exits 0 without touching
 `plans/`. A server it can't reach, or a refused key, exits 1.
+
+## Formats
+
+`plans/` holds one plan per build and platform, and `index.json` lists them:
+
+    plans/index.json
+    plans/CUSA17419/0ac6bc17db533c799dcccaa4fcf85ebf00000000-ps5.bin
+
+    {"version": 1, "plans": [{"title", "fingerprint", "platform", "path", "sha256",
+                              "contributors", "boots", "updated"}]}
+
+The server's API:
+
+- `POST /v1/plans`, `Authorization: Bearer <contribution key>`, JSON
+  `{"install": "<random 32 hex>", "title", "platform", "fingerprint", "plan": "<base64>", "ghostldr": "<version>"}`:
+  201 stored, 200 unchanged, 400 invalid, 401 bad key, 413 too big, 429 too
+  many (30 an hour per address).
+- `GET /v1/submissions?after=<id>`, `Authorization: Bearer <admin key>`:
+  `{"submissions": [{"id", "received", "install", "title", "platform", "fingerprint", "plan", "ghostldr"}], "last": <id>}`.
+- `GET /v1/health`: `{"ok": true}`.

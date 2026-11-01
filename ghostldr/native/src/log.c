@@ -14,7 +14,7 @@
  * log_fd is read for each line, so ghostldr.lua can take the connection back
  * (log_fd -1) once the core has returned.
  *
- * Files (docs/logs.md): every line also goes to /temp0/ghostldr.log, from the
+ * Files: every line also goes to /temp0/ghostldr.log, from the
  * first one on (one write per line: a crash loses none).  Once the extension's
  * code is placed it takes the lines instead (struct ghost_diag's sink,
  * ext/src/logfile.c): /temp0 and this boot's file on a USB drive, each with a

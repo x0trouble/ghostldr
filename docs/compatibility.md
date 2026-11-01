@@ -1,357 +1,82 @@
-# Bringing up a new title
+# Compatibility
 
-ghostldr loads PS4 titles, games and homebrew alike, inside SWRR. **Ghost of Tsushima (CUSA11456 v2.18) is the most tested title. Bloodborne (CUSA00900 v1.09) also reaches gameplay, and OpenOrbis homebrew runs ([Homebrew](#homebrew)).** Nothing in the loader is tied to Ghost: everything Ghost needs that other titles don't lives in its profile, `ghostldr/data/titles/CUSA11456.json`, and only applies to that build of its executable. Another title will boot as far as its imports and memory needs allow. This page is the loop for finding out how far that is and for closing the gaps.
+What runs with ghostldr, where, and the known limits. To run it, see [using-the-release.md](using-the-release.md).
 
-1. Put the dump on a [USB drive](#on-a-usb-drive-recommended) (recommended), or [pack](#1-pack) it, with or without an open-order file,
-2. and [install](#2-install) it next to whatever is installed already.
-3. [Boot](#3-boot) it and [read the log](#4-read-the-log).
-4. [Write a profile](#5-write-a-profile): memory, save size, app parameters, [HLE rules](#6-hle-rules) for single imports.
-5. Write C for what rules can't express, in the [runtime extension](#7-c-level-hle).
-6. [Capture an open order](#8-capture-an-open-order) once it plays, so the right containers stay mounted.
+## Consoles
 
-Homebrew built with the OpenOrbis toolchain has its own section: [Homebrew](#homebrew).
-
-## On a USB drive (recommended)
-
-A USB drive is the quicker loop for trying a title: nothing is packed or installed, and copying again after a change only sends what changed.
-
-```bash
-python3 ghostldr.py copy /path/to/CUSA12345/app0
-```
-
-```bash
-python3 ghostldr/host/run.py boot --app-root usb:/ --title CUSA12345 --snap
-```
-
-`gfs_pack.py --src DUMP --usb DRIVE` does the same as `copy` and also runs the executable-memory check below. Copying the dump's folder anywhere on the drive by hand works too, in a folder of any name ([usb.md](usb.md#what-goes-on-the-drive)); `python3 ghostldr.py check` says whether the PS5 will find it. Profiles, HLE rules and the log work the same way; only the open order (step 8) is for installed titles. Steps 1 and 2 are the saved-data way.
-
-## 1. Pack
-
-```bash
-python3 ghostldr/host/gfs_pack.py --src /path/to/CUSA12345/app0
-```
-
-- **Title ID:** from `--title`, else `sce_sys/param.sfo`'s `TITLE_ID`, else the profile whose eboot fingerprint matches the dump, else, for OpenOrbis homebrew, its module name (`hello_world` becomes `HELLO_WORLD`; gfs_pack says so). Other homebrew without a usable `param.sfo`: pass `--title` (1–15 of `A-Z 0-9 _ -`).
-- **Prefix:** the profile's `pack.prefix`, else `G` and the ID's digits (`G12345`); `--prefix` picks another. Its rules are in [ghostfs-catalogue.md](ghostfs-catalogue.md). It also names the title's progress, so don't change it once played.
-- **Order:** only about 12 containers (12 GiB) stay mounted, so files used together should be packed together. Without an order file the generic order is: `eboot.bin`, `sce_module/`, `sce_sys/`, files up to 64 KiB (fewer if they'd pass 256 MiB together), then the rest directory by directory. With one (`--order FILE` or the profile's `pack.order`), the boot files come first, then the files in the order the title opened them, then the rest.
-- **Output:** `build/ghostfs/<TITLE>/layout.json` and `index.bin`. Nothing is sent yet. A missing `sce_module/` is fine.
-- **Container sizes:** full data containers are 1 GiB; the last one (all of a small title) is sized to its data, at least 16 MiB.
-- **Executable memory:** the last line says whether the title's code fits where ghostldr can run code (see [Large executables](#large-executables)): `fits the EE buffer`, `needs multi-buffer placement`, `needs JIT reclaim` or `won't fit`.
-
-## 2. Install
-
-```bash
-python3 ghostldr/host/gfs_install.py --title CUSA12345
-```
-
-- Titles live side by side: installing one never deletes another. Before sending, the installer checks the console's free space and stops with a message if the title doesn't fit.
-- It first checks the title's code the same way as `gfs_pack.py` (it needs the dump that was packed) and refuses a title whose code `won't fit`: it could not boot. `--no-fit-check` installs it anyway.
-- `--list` shows what is installed; `--remove CUSA12345` deletes one title's data and index and keeps its progress (`--remove-saves` deletes that too). `--dry-run` shows what would change.
-- Interrupted installs resume; an unfinished title never boots. Details: [ghostfs-catalogue.md](ghostfs-catalogue.md).
-
-## 3. Boot
-
-```bash
-python3 ghostldr/host/run.py boot --app-root ghostfs --title CUSA12345 --snap
-```
-
-(`--app-root usb:/` for a title on a USB drive; the default, `auto`, looks on the drive first, then at the installed titles.)
-
-- `--title` picks among the installed titles; without it the only installed one boots, or the core logs the list and stops.
-- run.py sends every profile it knows with the core; the core uses the title's, or the generic default.
-- With a dev setup (`--app-root /data/.../app0`), the title is the one asked for, else the one whose eboot fingerprint matches a profile.
-- `--snap` starts the watchdog (every title thread's location every 20 s): that is what shows where a hang sits.
-- **Preflight:** when a name table exists (`build/nid/known_names.txt`, from `tools/fetch_deps.sh`), `run.py boot` first runs `import_report.py` over the booted title's local dump and writes `build/ghostldr/preflight.md`. The dump is `--title`'s (where `gfs_pack.py` read it), or without `--title` the only title with a dump on this computer; with several, or `--select`, it skips. If any import is unresolved it asks `Boot anyway? [y/N]`; `--force-preflight` boots without asking, and with no terminal to ask on the boot stops. Ghost and Bloodborne have none.
-- `python3 ghostldr/host/run.py doctor` checks the computer and the console before a boot ([host-tooling.md](host-tooling.md)).
-- **Modules outside `sce_module/`:** a module the executable or a loaded module needs (`DT_NEEDED`) that isn't a system library (`libSce*`, `libkernel*`) and isn't in `sce_module/` is looked for anywhere else in the title. Unity keeps `mono-ps4.prx` and `MonoAssembliesPS4.prx` in `Media/Modules/`; the log says `boot: eboot.bin needs mono-ps4.prx: found in /app0/Media/Modules`. `import_report.py` and the fit check count them the same way.
-
-### Memory without a plan
-
-Unless its profile has a plan, a title runs **plan-free** (`budget.c`):
-
-- It is told one stable direct-memory size, computed once its modules are loaded: the free memory, minus 64 MiB for ghostldr, minus 100 MiB if it imports a video decoder (`libSceVideodec*`, `libSceAvPlayer`), minus its flexible-memory budget. `sceKernelAvailableDirectMemorySize` offers it as one contiguous run; ghostldr scatters what no single physical hole holds.
-- The flexible budget is the title's own (`mem_param.flexible_memory_size` in its proc param), else 448 MiB. Flexible memory is backed by direct memory; `MapNamedSystemFlexibleMemory` from the title is ordinary flexible memory too, never the console-wide system pool.
-- Running out gives the kernel's errors: `EAGAIN` (0x80020023) past the direct size, `ENOMEM` (0x8002000c) past the flexible budget. The first of each is logged.
-- `sceKernelIsNeoMode` is 0: titles pick their base-PS4 plan.
-- With SWRR's ~4,530 MiB free that comes to about 4,020 MiB of direct memory for a title with the default 448 MiB of flexible memory and no video, 3,920 MiB with video. A base PS4 gives 4,608–4,736 MiB. Titles that need more need a memory plan (below).
-- If the size comes out below the profile's `min_mib` (1024 by default), the boot stops before the title starts.
-- Anonymous `mmap` (`MAP_ANON`, also `sceKernelMmap`) is flexible memory like `sceKernelMapFlexibleMemory`: flex-as-direct within the budget, zero-filled. OpenOrbis homebrew's malloc (musl, linked into its eboot) grows this way. `PROT_NONE` only reserves address space.
-- **Titles without a libc of their own** (no title module exports `malloc`) that import the malloc family from the system's `libSceLibcInternal` get a ghostldr heap in their flexible budget instead of SWRR's, which has only about 38 MiB to grow into. The log says `libc_heap: no title module exports malloc: ...`. Titles with their own `libc.prx` keep its heap.
-
-The log line to look for:
-
-```
-budget: plan-free: 4532 MiB free in 6 holes (largest 3292) - 64 ghostldr - 100 video - 448 flex = 3920 MiB direct memory, one run; Neo mode 0
-```
-
-### Memory learned at run time
-
-A plan-free title also gets an automatic memory plan (`automem.c`) that does what a [manual plan](#memory-plans) does, worked out from how the title behaved on its earlier boots:
-
-- **Lazy commit.** Every direct allocation of 64 MiB or more is backed 2 MiB at a time, when the title first maps that part, and zeroed then. A heap the title fills a little at a time holds only what it uses. Past the plan-free size, such an allocation is still admitted (up to 2 GiB more), so one boot shows the title's whole demand instead of stopping at the first pool too many.
-- **A learned plan per build**, kept with the title's saves (`ghostldr-memory.bin`, about 1 KiB, keyed by the eboot fingerprint). For each large allocation it records the size and how much the title committed. For the whole run it records the most the title reserved and held, whether it ran out (of what it was told, or of real memory), and how long it ran. The next boot tells the title what it reserved last time plus 64 MiB. That is more than is physically free only as far as its heaps left memory unused.
-- **Pool shrinking.** A pool the title maps whole gains nothing from lazy commit. When the title needs more than that overcommit covers, or ran out of real memory, the next boot shrinks its pools before the title starts. It finds each pool as manual plans' tables are found: the pool's size as a u64 in the executable's text, among other sizes, one per memory mode. The pool whose size varies most across the title's memory modes shrinks first. That is a cache the title sizes to the memory it has, like Ghost's streaming pool at 1120–4696 MiB. No pool goes below half its size.
-- **Checks.** The pool's next allocation shows whether those cells were its size. Cells that were not are never patched again. If the title twice stops within two minutes after a pool shrank, the pool goes back to the size it last ran with and shrinks no further. If it runs out of real memory with nothing left to shrink, allocations past what it is told are refused again, as plain plan-free.
-
-The first boot of a build is the plan-free size with lazy commit. On Ghost's own executable, with 4,252 MiB of real memory, the plan settles on its third boot:
-- the streaming pool goes 1120 → 658 → 560 MiB;
-- the engine heap goes 332 → 198 MiB;
-- the title is told 4,420 MiB.
-
-Its manual plan, tuned on hardware, uses 588 MiB of streaming pool and 320 MiB of CPU heap.
-
-- `run.py --no-auto-memory` turns all of this off (plain plan-free).
-- `--auto-memory` uses it even when the profile has a manual plan.
-- `--forget-memory` starts the learned plan over.
-
-The log lines to look for:
-
-```
-automem: learned plan, boot 2 of this build: last time told 4352 MiB, reserved at most 5050, held 4252, ran out of memory; its heaps left 798 MiB unused
-automem: the 1120 MiB pool from eboot+eee115 (its size varies 419% across memory modes) shrinks to 658 MiB, 3 size cells
-automem: eboot+eee115 allocated 658 MiB: the size cells were its pool's
-```
-
-### Large executables
-
-Code can only run in JIT memory inside SWRR. A console has one cap on JIT memory for SWRR and its compiler process together, 65 MiB on a 13.60 PS5, and the PS2 emulator's own JIT buffers hold all of it but 768 KiB: one of 32 MiB (EE), one of 16 MiB and two of 8 MiB, plus the 256 KiB one that holds ghostldr's core. ghostldr runs titles in those buffers, and when they can't hold the code, in fresh JIT memory it gets back by reclaiming them (`arena.c`, `bigexec.c`).
-
-- **Usually** every module goes in the 32 MiB buffer: the boot prx (`libSceFios2.prx`, `libc.prx`, then those whose libraries are imported, by name), each at the next 64 KiB boundary after the previous one's image, then `eboot.bin`. Each module's executable segment and RELRO must lie inside it, from 16 KiB in; data segments go outside it, in system flexible memory. Ghost of Tsushima (19 MiB of text) fits this way.
-- **When they don't fit** (Bloodborne: an 81 MiB executable segment, of it 44 MiB of code), the module with the most text gets whole buffers of its own (`bigexec.c`). Each buffer is mapped as a read-execute view at the module's code addresses, back to back where the code continues, in an address range reserved at 0xE0_0000_0000 (high in the app map area, away from where titles map their own memory: Ghost maps at 0x10, 0x11, 0x20 and 0x30_0000_0000). A view must be the whole buffer: it can't start at an offset or be shorter. The rest of the module's executable segment (read-only data, unwind tables) is direct memory next to the views, taken from the title's direct memory before its budget is computed; its data segments come from system flexible memory, as the arena's modules' do (up to 128 MiB punched in all; past that, or if a fixed map there is refused, direct memory). The other modules use the largest buffer left over, as before, with what's left of it for prx loaded at run time.
-- **Where the code is** (`bxplan.c`): every function `.eh_frame` describes, frame-pointer prologues at 16-byte boundaries, PLT entries, the entry point and `DT_INIT`/`DT_FINI`, kept per 64 KiB. Code less than 1 MiB apart is one run, each run gets 256 KiB of margin on both sides (small functions without unwind information sit between the others), and at most 6 runs stay. Thread-pointer patching only scans these runs.
-- **Which buffers go where:** every split of the runs into groups and every assignment of the buffers to them is tried; the fewest bytes of buffers win, then the fewest buffers. One buffer must stay free for the other modules.
-- **When no set of whole buffers covers the code** (more than about 56 MiB of it, or code spread so that whole buffers can't take it and leave one for the other modules), the buffers are reclaimed (`ext/src/reclaim.c`, run by the extension for the core):
-  - every reference to the four buffers is dropped: their three descriptors each in the compiler (base, read-execute alias, read-write alias), the one in SWRR, the compiler's mapping and SWRR's view at their home. A JIT object's memory comes back when its last reference goes. The PS2 emulation is dead afterwards; a boot doesn't need it;
-  - fresh JIT objects are made: one per code run, mapped where the views would go; and one for the other modules, mapped where the EE buffer was, so they land at the same addresses as before. The JIT memory is shared out in this order: the code runs; the other modules' images and 8 MiB for prx loaded at run time; the code objects grow over the read-only data after their code, each up to the next object or the end of the text, so less of the text is in direct memory; the rest to the other modules, up to 32 MiB. The compiler writes the fresh objects where it maps them; the direct memory, data segments and code map are as with views. Bloodborne with `--reclaim`: one 53.6 MiB object, 33.2 MiB of direct memory for the rest of its text and its data (38.8 with views);
-  - the extension's own block is made first (a block made after the drop could land where the EE buffer was);
-  - what is free is measured before anything is dropped and again after (the largest object the compiler can create, to 16 KiB), and nothing is dropped unless that plus the buffers holds the plan. A buffer the ELF loader still holds is left alone, and its memory is not counted.
-  - `run.py --reclaim` does this for any title, also one the buffers would hold.
-- **The limit:** 65 MiB of JIT memory in all, less the core's 256 KiB object and the extension's block (704 KiB in 1.0): **64.06 MiB** for a title's code and the other modules' object (at least 1 MiB), so about 63 MiB of code. There is no separate limit per object: one object can take all of it. Measured the same on a stock 13.60 PS5 and a 12.50 PS4 Pro with a 672 KiB extension: 96 KiB free beside the buffers once the extension is placed, 65632 KiB (64.09 MiB) after the four are dropped; each 16 KiB the extension grows comes out of that. More `won't fit`; the verdict and the boot log (`bigexec: no fresh JIT objects: ... won't fit: its code needs N KiB of JIT memory and the other modules M KiB; with the emulator's buffers reclaimed the console has K KiB`) say how much it needs and how much there is. Code past that would need demand paging (SWRR-game-bridge research, not done).
-- **On a 13.60 PS5,** a homebrew with 58 MiB of code in one run (whole buffers can't take it and keep one for the other modules) chose the reclaim by itself and ran from one fresh object: all 116 of its functions, spread over 57 MiB. Forced with `run.py --reclaim`, Ghost (one 19.2 MiB object, its data from system flexible memory) reached gameplay through CONTINUE, and Bloodborne (one 53.6 MiB object, 27.2 MiB of direct memory for the rest of its text against 32.9 with views) its title screen.
-- **The extension's code** takes a new JIT block, out of the 768 KiB left beside the buffers. When no block that large is left (the extension grew past it), it goes at the top of the smaller buffers' highest one (VU0 on 13.60) instead, which then leaves the arena: whole-buffer views and the reclaim do without those 8 MiB (`run.py --ext-buffer` places it there on purpose).
-- **Only the views are executable.** The direct memory next to them is never asked for execute permission. A crash in the module's text outside its views logs `CRASH: rip is in eboot.bin's text but in none of its JIT views`: code the code map missed (see `exec` below). A console running a kernel patch may make other memory executable where a stock one would not, so test there too.
-- **Before installing:** `python3 ghostldr/tools/exec_fit.py /path/to/app0` gives the verdict with the same rules (its plan is a line-by-line twin of `bxplan.c`), the buffers or fresh objects it would use, the direct memory that takes, and the room left for prx loaded at run time. `import_report.py` has it as a section; `gfs_pack.py` prints it and `gfs_install.py` refuses a title that won't fit.
-- **The profile can say where the code is**, if the evidence is wrong for a title: `"exec": {"eboot.bin": [["0x0", "0x2c00000"]]}`, sorted text offsets, at most 6 ranges, bound to the build (`eboot.fingerprint`). They replace the evidence (rounded out to 16 KiB, no margins).
-- **On a PS4** there are no views (the compiler's mapping of a buffer may not cover it whole): when the modules don't fit the largest buffer, the reclaim. On a 12.50 PS4 Pro a homebrew booted that way (with `--reclaim`) ran with its code in a fresh object at `e000000000` and its modules in the fresh arena object where the EE buffer was. A PS4's 2.5 GiB memory cap still limits which games can run ([ps4.md](ps4.md)).
-
-Bloodborne (CUSA00900 v1.09) boots this way into gameplay on a stock 13.60 kernel, with a memory plan ([Memory plans](#memory-plans)). The log lines to look for:
-
-```
-bigexec: eboot.bin (text 50dc000) does not fit the arena with the other modules: its code goes in whole JIT objects
-bigexec: eboot.bin: code map from 162959 FDEs (40741 KiB), 86568 prologues, 661 PLT entries
-bigexec: eboot.bin: code +0-+2c10000
-bigexec: eboot.bin: +0-+2000000 executable: the 32 MiB JIT object at 900a1c000
-bigexec: eboot.bin: +2000000-+3000000 executable: the 16 MiB JIT object at 903a28000
-bigexec: compiler descriptor 501 is the 16 MiB JIT object at 903a28000 (RX alias here: 40)
-bigexec: compiler descriptor 538 is the 32 MiB JIT object at 900a1c000 (RX alias here: 41)
-arena: 900a1c000-902a1c000 (32768 KiB) leaves the arena
-arena: 903a28000-904a28000 (16384 KiB) leaves the arena
-libSceFios2.prx: placed at 902a30000 (text 4c000, relro 0+0)
-libc.prx: placed at 902bb0000 (text b8000, relro 0+0)
-bigexec: eboot.bin: +3000000-+50dc000 not executable (direct memory)
-eboot.bin: placed at 2000000000 (text 50dc000 in 2 JIT objects, 48 MiB); direct memory 33648 KiB read-only + 6112 KiB data, taken from the title's direct memory
-```
-
-(That boot was before the range moved: it is now reserved at `e000000000`.)
-
-## 4. Read the log
-
-Everything lands in `build/ghostldr/run.log`.
-
-| Line | Meaning |
+| | Status |
 |---|---|
-| `ghostfs: installed: ...`, `ghostfs: CUSA12345, N entries ...` | The catalogue, and the title being served as `/app0`. |
-| `profile: CUSA12345 own profile, eboot <fingerprint>: memory plan-free ...` | Which profile applies, and what it turns on. `generic` means the default. |
-| `unresolved: eboot.bin needs libSceFoo:<NID> (sceFooBar) from module libSceFoo` | At load: an import nothing implements. Its calls go to a logging stub. |
-| `UNRESOLVED call: libSceFoo <NID> (sceFooBar)` | At run time: the title called it. The stub returned 0. **These are the work list.** |
-| `DENIED call: ...` | With the runtime extension: a library that must not reach SWRR's own (its policy) and has no implementation for this function. |
-| `budget: ...` | The memory budget, and the first time the title runs out. |
-| `CRASH sig 11 fault addr ... rip ... = eboot.bin+0x...` | A crash, with registers and a backtrace as module+offset. |
-| `snap ...` / `watchdog: ...` | Thread locations every 20 s (`--snap`): a title that stops making progress shows where. |
-| `ghost1: ...` / `ghost2: ...` | The title's own stdout/stderr (printf, asserts). |
-| `[hint] ...` | Added by `run.py` after an `ext:` line that stopped the boot: the cause in plain words, and the fix. |
+| **PS5, firmware 13.60 and later** | Supported, with SWRR US (CUSA03474) or EU (CUSA03492) and Luac0re 2.4b. |
+| **PS4** | Homebrew and small titles only. |
+| **Jak X with UltraC0re** | Experimental. |
 
-`python3 ghostldr/tools/stub_report.py build/ghostldr/run.log` ranks the `UNRESOLVED call` and `DENIED call` lines by how often each function was hit: the work list in the order the title needs it.
+### On a PS4
 
-For each `UNRESOLVED call`, decide:
+- **Memory:** the PS4's kernel gives PS2 Classics such as SWRR 2.5 GiB of memory, and this can't be lifted. Ghost of Tsushima needs about 4 GiB, so big games can't run.
+- **Games come from SWRR's saved data only.** The PS4 can't give SWRR a USB drive, so install games over the network (about 40 MB/s on a PS4 Pro).
+- **The selector marks every game's dump** `May not run on PS4` and asks before it starts one. Homebrew isn't marked.
+- **No ELF loader** (`ghostldr-elfldr.bin` is refused), and no return to the selector after a game.
+- **The log** stays in `/temp0/ghostldr.log`.
+- **The autoloader save** works (tested with Apollo Save Tool on a 12.50 PS4 with GoldHEN).
+- Tested on a PS4 Pro at 12.50. The 2.5 GiB limit is the same on 9.60.
 
-- **It can just succeed** (registration, telemetry, a feature you don't need): an HLE rule returning 0.
-- **It must report a state or fill a struct** with constant values: an HLE rule with fills.
-- **It needs logic** (callbacks, handles, real work): C in the runtime extension.
-- **SWRR's system module would do it** but the name was unknown: the core resolves host modules by name, so the name must be in its NID table. The runtime extension carries all ~42,000 known names. A core without it carries only the names of the dump it was built against: rebuild it with `make -C ghostldr/native APP0=/path/to/app0`.
+### In Jak X
 
-To see all of it before the first boot, `ghostldr/tools/import_report.py` (the import coverage report) lists every import of the dump's `eboot.bin` and `sce_module/*.prx` and how it would bind: core HLE, extension HLE, the title's own modules, a system module on the console (`ghostldr/data/ps5_ps4_sysmodules.txt`), or nothing. Given a [shadPS4](https://github.com/shadps4-emu/shadPS4) source tree, it also shows which of those functions shadPS4 implements or stubs (a reference for how they behave; no shadPS4 code is used):
+ghostldr can use *Jak X: Combat Racing* in place of SWRR: the EU PS2 Classic (CUSA07992, update 1.04) with [UltraC0re](https://github.com/matem6/UltraC0re) 1.0.2 in place of Luac0re. Ghost of Tsushima plays there, in its PS4 Pro mode.
 
-```bash
-python3 ghostldr/tools/import_report.py /path/to/CUSA12345/app0 --shadps4 /path/to/shadPS4 --md coverage.md --json coverage.json
-```
+- **For developers for now.** UltraC0re's save needs a small patch on consoles where Jak X loads at a fixed address, and the release's two-file boot hasn't been tried there. [developers.md](developers.md#jak-x) has the tested way.
+- **Its loader is on port 8888**, not 9026, and it takes about 6 minutes to reach (Jak X's intro can't be skipped).
+- **Installs and progress are separate** from SWRR's: Jak X keeps its own saved data.
+- No autoloader save, and no return to the selector after a game.
 
-## 5. Write a profile
+## Games
 
-```bash
-python3 ghostldr/host/profiles.py new --src /path/to/CUSA12345/app0 > ghostldr/data/titles/CUSA12345.json
-python3 ghostldr/host/profiles.py check
-python3 ghostldr/host/profiles.py show CUSA12345
-```
+| Game | Status |
+|---|---|
+| **Ghost of Tsushima** v2.18 (CUSA11456) | Plays. The most tested title: menus, movies, New Game, Continue, saving. From a USB drive it reaches its menu in about 35 seconds. |
+| **Bloodborne** 1.09 (CUSA00900) | Plays: loading, playing and saving. Its memory plan is built in. |
+| **Other PS4 games** | Boot as far as their imports and memory allow. |
+| **PS5 games** | Can't run: SWRR runs in PS4 mode. The selector leaves them out. |
 
-`<TITLE>.json` is merged over `default.json` (objects key by key, the rest replaced) and validated by `profiles.py check`. Changing a profile needs no reinstall unless `pack` changes: run.py sends profiles with every boot.
+Use the dump of the version listed: a game's memory plan and fixes apply to that build only. Another version runs as an unknown game.
 
-| Field | Default | What it does |
-|---|---|---|
-| `title`, `name`, `version`, `status`, `notes` | | The ID (must match the file name), display name and version (the catalogue shows them; the game selector shows the name when the title has no `param.sfo`, and the version is stored with its name and art), and free text. |
-| `eboot.fingerprint` | none | 40 hex digits, `DT_SCE_FINGERPRINT` of `eboot.bin` (`profiles.py detect` prints it). **Binds the whole profile to that build:** on any other build the core uses the defaults. Required for a memory plan and the `ghost_*` features. |
-| `pack.prefix`, `pack.order`, `pack.late`, `pack.exclude`, `pack.groups` | generic | Container prefix; open-order file (in `ghostldr/data/titles/`); path prefixes whose traced files go after the other traced ones; a regex of files to leave out; `[regex, rank]` rules replacing the generic order (rank 0 is the boot group). Changing these changes the layout: reinstall. |
-| `app_params` | `{"0": 3}` | `sceAppContentAppParamGetInt` ids 0–4. Id 0 is the SKU (3 = full game); 1–4 come from `param.sfo`'s `USER_DEFINED_PARAM_1-4`, and the profile's win. |
-| `save_blocks` | 1024 | Size of `<prefix>SAVE` when first created, in 32 KiB blocks. |
-| `features` | none | `trace_opens` (log every open, as `run.py --trace-opens`). `dialogs_auto` (answer its dialogs at once instead of drawing them). `save_tool`: a save tool such as Apollo Save Tool: the game selector asks whose saves to open and runs the save scan before it starts ([selector.md](selector.md#save-tools-apollo-save-tool)). `ghost_hooks` and `ghost_diagnostics` are Ghost's diagnostics at fixed offsets of its 2.18 executable. |
-| `memory.mode` | `plan-free` | `plan` for a memory plan (below). |
-| `memory.runtime_reserve_mib` | 64 | Kept for ghostldr. `run.py --slack-mib` overrides it. |
-| `memory.video_reserve_mib` | auto | Kept for the video decoder: 100 if the title imports one, else 0. |
-| `memory.flex_mib` | 0 | Flexible budget: 0 = the title's own, else 448 (plan-free); no cap (plan). |
-| `memory.min_mib` | 1024 | Plan-free: stop the boot below this direct size. |
-| `memory.plan` | | See [Memory plans](#memory-plans). |
-| `hle` | none | [HLE rules](#6-hle-rules). |
-| `exec` | none | `{"eboot.bin": [["0x0", "0x2c00000"]]}`: a module's code ranges, used instead of what the core reads from the module when its code needs several JIT buffers ([Large executables](#large-executables)). Bound to the build: needs `eboot.fingerprint`. |
-| `tls_sites` | none | `{"eboot.bin": "<TITLE>-tls-eboot.txt"}`: the module's thread-pointer loads (`mov`/`add r64, fs:[0]`) as found by `ghostldr/tools/tls_sites.py MODULE --out FILE`, which disassembles the functions `.eh_frame` describes. The core patches exactly these, each checked first, instead of scanning the whole text (rodata included). Bound to the build: needs `eboot.fingerprint`. The tool also lists fs: accesses it cannot patch. |
-
-### Memory plans
-
-A title whose fixed demand is larger than the plan-free size (Ghost's mode-0 plan wants ~5.07 GiB) needs a plan, bound to its build by the fingerprint:
-
-```json
-"memory": {
- "mode": "plan", "runtime_reserve_mib": 32, "video_reserve_mib": 100,
- "plan": {
-  "title_fixed_mib": 3996, "overcommit_mib": 120,
-  "lazy_sites": ["0x896126", "0x89614a", "0xeee2cf"],
-  "tables": [
-   {"table": "0x111cd50", "role": "absorb", "what": "streaming pool", "min_mib": 128,
-    "expect": ["0x46000000", "0x46000000", "0x46000000", "0x84800000", "0x125800000", "0x125800000"]},
-   {"table": "0x111cd20", "role": "set", "what": "CPU malloc heap", "knob": "cpu_heap", "mib": 320}
-  ]
- }
-}
-```
-
-- `tables` are u64 arrays in the executable's text, indexed by memory mode. `set` tables get `mib` (or the run.py knob: `gpu_heap`, `pool1`, `cpu_heap`); the one `absorb` table takes the rest: `free - title_fixed - reserve - set changes + overcommit - video`, between `min_mib` and its own size. Its `expect` contents are checked before anything is patched.
-- The title is told `title_fixed + set changes + absorb`. `title_fixed_mib` is the sum of its other reservations.
-- `lazy_sites` are return addresses (eboot offsets) of `sceKernelAllocateDirectMemory` calls whose memory is committed 2 MiB at a time when first mapped; `overcommit_mib` is what that saves (measured: the watchdog's `direct alloc from eboot+X: N MiB, mapped M MiB`).
-- `patches` change bytes of the executable's text for a size it holds as an immediate rather than in a table: each `{"at": offset, "expect": hex, "write": hex, "what": name}` (1-16 bytes) is written only where the bytes are as expected (the extension, `ext_main.c`, before the text is written), and only on the profile's build. Lower `title_fixed_mib` by what they save.
-- `swap` backs a CPU-only heap in part, the rest in a swap file (`ext/src/swap.c`): each `{"site": return address, "len_mib": its size, "resident_mib": memory behind it, "what": name}` names one `sceKernelAllocateDirectMemory` call by its site and size. The title gets the whole size as address space; its 64 KiB pages are mapped the first time they are touched (the core's crash handler hands the fault to the swap first), and once `resident_mib` are in use the oldest page is written to `/temp0/ghostldr-swapN.bin` (else `ghostldr/` on the USB drive) and its memory reused. A page never written out reads as zeros. The file calls the extension routes (read, readv, write) page their buffers in and pin them first, since the kernel can't fault a page in; a buffer another syscall or the GPU uses can't be in a swapped heap, so only heaps mapped CPU read-write qualify. Lower `title_fixed_mib` by `len_mib - resident_mib`. A crash report ends with each heap's faults and pages in and out (`swap: ...`).
-- `neo` is the plan for a Pro-mode host (Jak X, see [jakx.md](jakx.md#pro-mode)): `mode` is the title's Pro memory mode (the index the tables are patched at), with that mode's own `title_fixed_mib`, `overcommit_mib` and `knobs` (a set table's size in that mode, by its knob, e.g. `{"gpu_heap": 1680}`).
-- Ghost's plan reproduces its logged boot: `4532 MiB free in 6 holes; streaming pool 1120 -> 588 MiB; reporting 4520 MiB direct memory`.
-- Bloodborne's plan (`CUSA00900.json`): its engine makes 16 heaps from a table of memory configs (eboot+0x4736d40, 16 u64 per config; the retail config `Master_ps4_GFXMIX` is the second, at +0x80), 4478 MiB of direct memory, plus 116 MiB before them and 322 MiB of flexible memory. It maps every heap whole when it makes it, so lazy commit saves nothing: the second GPU heap, `GFX_GraphicsPrivateB` (886 MiB), absorbs the shortfall, `4435 MiB free in 8 holes; GFX_GraphicsPrivateB heap 886 -> 236 MiB; reporting 4302 MiB direct memory`. Each table entry names one cell of that config, so the run.py knobs reach its other heaps: `--gpu-heap-mib` (`GFX_GraphicsPrivate`, 2287), `--cpu-heap-mib` (`MAIN`, 524), `--pool1-mib` (`HAVOK`, 296). Without a plan the heap is refused (EAGAIN) and the title carries on without it. B at ~240 MiB ran out loading the second map out of the clinic (m27: a GPU buffer's allocation failed, then a null buffer at eboot+2166b8a); crash reports' memory census showed which heaps had room, so the plan now gives B ~556 MiB: the 116 MiB block shrinks to 32 (`patches`), and HAVOK and GFX keep their sizes with 120 and 220 MiB of memory behind them (`swap`).
-- A planned title's new memory is zeroed, as a plan-free title's is: Bloodborne's heaps stop it at once on stale contents (`[Dantelion2 Panic] ... DLLightMutex.cpp(126) Mutex is not initialized`).
-- `budget: the title holds N MiB of direct|flexible memory (its most so far)` logs each new high-water mark (every 256 MiB direct, 32 MiB flexible): what a plan's `title_fixed_mib` has to cover.
-
-## 6. HLE rules
-
-A rule answers one import without C: it writes constants through pointer arguments, then returns a value.
-
-```json
-"hle": [
- {"lib": "libSceNpManager", "function": "sceNpGetState", "value": 0,
-  "fill": [{"arg": 2, "size": 4, "value": 3}]},
- {"function": "sceNpCheckPlus", "value": 0, "fill": [{"arg": 2, "offset": 0, "zero": 16}]},
- {"nid": "AbCdEfGhIjK", "value": "0x80020016", "log": 5}
-]
-```
-
-- `function` (its NID is computed) or `nid` for an import with no known name; `lib` limits it to one library (empty: any).
-- `value`: what the call returns (`0x8...` for an error code).
-- `fill`: up to 8 writes. `arg` is the 1-based argument holding the pointer, `offset` bytes into it, then `size` 1/2/4/8 with `value`, or `zero` with a byte count. NULL pointers are skipped.
-- `log`: how many calls to log (1 by default) as `profile rule: lib function -> value`.
-- At most 32 rules. They take precedence over everything else, including the core's own HLE, and apply only when the profile does (its build, if it names a fingerprint).
-
-## 7. C-level HLE
-
-What needs logic goes in the runtime extension that run.py serves with the core (`ghostldr/native/ext/`; see [its README](../ghostldr/native/ext/README.md)). One family of functions per file, `ext/src/hle_<family>.c`, registered by library and NID, so it covers imports with no known name too. The core stays within its 240 KiB.
-
-## 8. Capture an open order
-
-Once the title plays, record which files it opens and pack them together:
-
-```bash
-python3 ghostldr/host/run.py boot --app-root ghostfs --title CUSA12345 --trace-opens
-```
-
-Play the parts that matter (menus, the first areas, a load from a save), over one or several boots. Then:
-
-```bash
-python3 ghostldr/host/capture_order.py --title CUSA12345 -o ghostldr/data/titles/CUSA12345-open-order.txt
-```
-
-```bash
-python3 ghostldr/host/gfs_pack.py --src /path/to/CUSA12345/app0 --order ghostldr/data/titles/CUSA12345-open-order.txt
-```
-
-and reinstall it (`gfs_install.py --title CUSA12345` resends only that title). Set `pack.order` in the profile to keep it. ghostfs logs the first open of each file anyway (`gfs open /app0/...`); `--trace-opens` adds every open on a dev setup, where the first 400 are logged otherwise.
+**Tried a game?** Report it with the [game compatibility form](https://github.com/asylumexp/ghostldr/issues/new/choose), with the boot's log from the USB drive.
 
 ## Homebrew
 
-OpenOrbis PS4 toolchain builds (v0.5.x, `create-fself` output: an fSELF `eboot.bin`, sometimes `sce_module/libc.prx` and `libSceFios2.prx`, which are OpenOrbis's own empty modules) run with no profile. Pack, install and boot them like any title:
+OpenOrbis homebrew runs from a USB drive or from saved data, with no setup per title. It gets:
 
-```bash
-python3 ghostldr/host/gfs_pack.py --src /path/to/homebrew/app0
-python3 ghostldr/host/gfs_install.py --title HELLO_WORLD
-python3 ghostldr/host/run.py boot --app-root ghostfs --title HELLO_WORLD
-```
+- its own files in `/app0`, and `/data` (kept in a save container of its own);
+- memory, threads and thread-local variables;
+- the screen, the controller, audio and FreeType fonts;
+- OpenGL ES 2 through Piglet, drawn on the console's GPU (homebrew built on SDL2's PS4 port);
+- network sockets;
+- save data, and save data memory;
+- its `printf` output in ghostldr's log.
 
-- **Title ID:** `param.sfo`'s `TITLE_ID` (`BREW00083`), else the module name (`HELLO_WORLD`), else `--title`. The prefix follows the usual rule (`G00083`, `GHELLOWORLD`); several homebrew titles install side by side like games. Packing a few MiB of homebrew takes one 16 MiB container.
-- **Profiles:** not needed. Every OpenOrbis build has the same eboot fingerprint (`OPENORBIS-HOMEBREW`), so a profile can't bind to one build: `profiles.py` refuses that fingerprint, and a memory plan or the `ghost_*` features don't apply to homebrew.
-- **The log:** `run.py boot` stops listening 20 s after the send (`--wait`). Homebrew keeps printing long after that: boot with `--wait 3600`, or leave `run.py logs --wait 3600` (or `recorder.py`) running, else the later `ghost1:` lines are lost.
+Homebrew made for jailbroken consoles runs too, as far as it doesn't need the kernel: there is no kernel access, and jailbreak calls get a stand-in answer. Exiting a homebrew goes back to the selector on a PS5.
 
-### What works
+Tested: the OpenOrbis samples (hello world, fonts, input, audio, exceptions, libraries) and ghostldr's own test programs. PS4-Xplorer 1.34 boots, but shows its firmware menu again on every launch, so it isn't listed as compatible.
 
-| | |
-|---|---|
-| Start | The executable's `_start` gets argc/argv and an empty environment and auxiliary vector (musl reads past argv). Modules start through `DT_INIT`, as on hardware: OpenOrbis prx keep the interpreter string at `e_entry`. |
-| stdout, stderr | `printf`, `std::cout` and the rest arrive in `run.log` as `ghost1:`/`ghost2:` lines (musl writes with `writev`). stdout answers `TIOCGWINSZ` like a terminal, so it is line-buffered and lines show up as they are written. |
-| Files | `/app0` comes from ghostfs: `fopen`, `open`, `read`/`readv`, `lseek`, `fstat`, `stat`, `opendir`/`readdir` (musl's POSIX calls; the extension's file family). Writing a title file fails with `EROFS`, as on hardware. |
-| Memory | `malloc` grows through anonymous `mmap`: the title's flexible budget, 448 MiB without a mem param (as on a PS4), far past SWRR's own 38 MiB. `sceKernelAllocateDirectMemory` for framebuffers and GPU memory gets the plan-free direct size (about 4 GiB). New memory reads as zeros, as a fresh PS4 process's does (samples draw over framebuffers they never clear). |
-| Threads | `pthread_create` and `scePthreadCreate` threads get their thread-local block (`thread_local`, `_Thread_local`); lld's TLS accesses are patched like Sony's. POSIX thread-specific data (`pthread_key_create`, `pthread_get/setspecific`, which libc++abi keeps its exception state in) is the extension's own: SWRR's faults on a homebrew thread (below). |
-| Video | `sceVideoOutOpen` takes the main output over from SWRR (it closes SWRR's handle and opens its own); the title's registered framebuffers and flips show. |
-| Pad | `scePadOpen` shares SWRR's pad handle; the "intercepted" bit Luac0re's leftover dialog leaves is cleared. |
-| FreeType | `libSceFreeType` (OpenOrbis's name) loads from `libSceFreeTypeOl.sprx`; `FT_New_Face` on an `/app0` font reads it from ghostfs and opens it with `FT_New_Memory_Face`. |
-| No libc of its own | Homebrew whose libc is the system's `libSceLibcInternal` gets the ghostldr heap (family `libc_heap`), `printf`/`puts`/`fprintf` to stdout and stderr in the log, and its own read-only `FILE`/`DIR` for `/app0` files (family `libc_stdio`). |
-| Exit | `_exit` (musl's `exit`) is logged with its code; SWRR ends with it, as the app would on a PS4. Start SWRR again before the next boot. |
-| Piglet (EGL, OpenGL ES 2) | A 13.60 PS5 has no `libScePigletv2VSH` a PS4 app can load, and homebrew built on SDL2's PS4 port draws with it. The `gles` family is that library: one EGL display, config and window surface; textured and coloured triangles, lines and points, blending, scissoring, render targets and `glReadPixels`; `eglSwapBuffers` shows the window through VideoOut. **It draws on the console's GPU** (`gles_gpu.c`): the draws become Gnm command buffers, submitted through SWRR's own `libSceGnmDriver` as a game's are, with the window drawn straight into the VideoOut buffers. The CPU still transforms the vertices (2D titles have few); one vertex shader and two pixel shaders (texture × colour × constant, and YUV/NV12/NV21), GCN code assembled when the shaders change (`ghostldr/native/ext/gcn`, `tools/mkgcn.py`), do the rest. Points and lines go to the GPU as one small square per pixel the software rasteriser would draw, so they cover the same pixels; anything the GPU path doesn't take (a texture without pixels, a line of more than 16384 pixels) is drawn by the software rasteriser (`gles_raster.c`) into the same memory once the GPU is idle; without `libSceGnmDriver`'s submit functions, or after a command buffer is refused or never ends, everything is drawn in software, as before (and with `EXT_CFLAGS=-DGLES_GPU=0`). Built with `EXT_CFLAGS=-DGLES_CHECK=1`, the 120th, 600th and 1800th frames are drawn both ways and compared in the log (`gles: GPU check frame ...`), and when they differ by more than rounding both frames are written to SWRR's `/temp0/ghostldr` (fetch them over ghostldr's FTP server). The software rasteriser covers and samples as the GPU does (vertex positions and texel coordinates to 1/256, GL's top-left rule in the target's memory rows), so pixel centres on a triangle's or a texel's edge, as in text scaled by 1.5, come out the same both ways; what is left is rounding (by 1 or 2: the GPU's 16-bit colour export rounds toward zero; by up to 4 in linearly filtered YUV). There is no GLSL compiler: a shader is recognised by what it does, and SDL2's GLES2 renderer's are all recognised; an unknown one fails to compile and says why in its info log. `sceKernelLoadStartModule` of `libScePigletv2VSH.sprx` gets a virtual handle and `sceKernelDlsym` on it the family's functions (`EXT_LIB_VIRTUAL`). Used on a PS4 too. |
-| Raw system calls | A `syscall` instruction outside libkernel ends SWRR on a PS5. Before a module's text is written, each `mov eax/rax, N; mov r10, rcx; syscall` becomes a call that hands the call to libkernel's function for N, as the title's import of it would bind, and returns as the kernel does (rax, or the errno with the carry flag set). Numbers with no such function answer ENOSYS; so does GoldHEN's kexec (11), on a kernel that isn't exploited (`hle_rawsys.c`), but for a jailbreak library's kernel payloads (next row). |
-| Jailbreak code (libjbc) | Homebrew for jailbroken consoles often links libjbc, whose `jbc_get_cred`, `jbc_jailbreak_cred` and `jbc_set_cred` edit the process's credentials in kernel memory through kexec. Its two kernel payloads (curthread: `mov rax, gs:[0]; ret`; a kernel memcpy: `mov rcx, rdx; rep movsb; ret`) are found as a module's text is patched, and a kexec of one runs against a virtual kernel (`hle_jbc.c`): a thread, its process, init (pid 1) after it in the process list, their credentials, file descriptor tables, prisons and vnodes, at kernel addresses backed by ghostldr's memory. libjbc's calls finish and leave those objects as a jailbreak would; the real kernel is never read or changed, and SWRR keeps its sandbox. Once the virtual credentials have the system's root, the title sees: `/user/<file>` as a directory of its own (the usual success test writes `/user/.jailbreak`); virtual `/dev/sbl_srv`, `/dev/pfsctldev` and `/dev/lvdctl` (`stat`, `mknod`, `open`), where `sbl_srv`'s save-key ioctls (0x40845303 make a sealed key, 0xc0845302 unseal one) answer stand-ins for the save tools' mount below, which never uses a key; each save's sealed key file `/user/home/<user>/savedata/<TITLE>/<DIR>.bin` (read-only, for saves the save service lists); and `setuid()` succeeds while the virtual uid is 0. Apollo Save Tool's released `eboot.bin` (v2.4.0) runs unmodified this way: its jailbreak succeeds, its HDD saves list and open, as with the earlier patched build (tried on a 13.60 PS5). |
-| Save data memory | `sceSaveDataSetupSaveDataMemory`/`2`, `Get`/`SetSaveDataMemory`/`2` and `SyncSaveDataMemory` keep the memory in a save container of the title's own, so it survives SWRR closing: in `<prefix>SAVE` when it fits beside what that holds, else in `<prefix>M<slot>SAVE`, sized for the memory, an icon and the filesystem's share (about 45 blocks of any container). An empty memory in a container an older ghostldr made too small gets one made again at the right size; a memory with contents is never moved or deleted (set up bigger than its container holds, it answers NO_SPACE). A title's own saves get the filesystem's share on top of the blocks they ask for, when they are created. Each write is committed when the call returns. |
-| Title prx | An `sce_module` prx the executable imports loads and starts (through `DT_INIT`) at boot; any other loads at run time with `sceKernelLoadStartModule("/app0/sce_module/x.prx")` (or the bare name), and `sceKernelDlsym` finds its functions and variables. A run-time prx's imports bind to modules already loaded (the title's own and the system's); loading it again gives the same handle, `sceKernelStopUnloadModule` keeps it loaded. OpenOrbis links a prx with `-pie`, so its thread-local variables (musl's `__musl_current_locale` among them) are reached as an executable's are: on a PS4 they land in the executable's TLS, and here they do too (in the title thread's block, not SWRR's own TLS). |
-| Paths of jailbroken homebrew | `/mnt/sandbox/<its title ID>_000/x` is the title's `/x` (homebrew reads its own `app0` that way). `/data`, where SWRR's sandbox has none, is a save container of the title's own, `<prefix>D000SAVE` (128 MiB, the SWRR user's, made at the first use and mounted for the session), so what the title keeps there survives SWRR closing (`/temp0` is wiped then); only without save containers (a dev install) is it `/temp0/ghostldr/<TITLE>/data`. A store game (an executable with a Sony fingerprint and a content ID other than homebrew's `IV...`) has no `/data`, as on a retail console: its paths fail with ENOENT (Bloodborne opens `/data/cache.bin`, a development kits' cache). `/mnt/usb0` is the USB drive ghostldr mounts, and `/mnt` is a directory (for tools that make `/mnt/usb0/x/y` one level at a time). A system font SWRR's sandbox lacks (`/preinst/common/font/...`, `/system_ex/.../fonts/...`) is replaced by the title's own first font file. |
-| Sockets | Where SWRR's `socket()` answers ENOSYS (a PS5 at 8.00 or later), the title's `socket()` and `sceNetSocket()` get sockets the JIT compiler made just before the title started: 24 stream and 8 datagram, each used once (`hle_net.c`). `fcntl(F_SETFL)` is EACCES on them, so `O_NONBLOCK` is set with the `SO_NBIO` socket option instead (`hle_file.c`). `sceNetGetDnsInfo` answers how many DNS servers it filled in (OpenOrbis's resolver reads it so), from the network settings when SWRR's answer has none. |
-| Other titles' saves | What a PS4 game may do with them reaches the real save service: `sceSaveDataDirNameSearch` and `sceSaveDataDelete` with another title ID, and `sceSaveDataMount` with one and that title's fingerprint (read-only, the user's own saves only). The host's own saves (its title ID from `sceKernelGetAppInfo`) stay out of sight. Of the titles ghostldr runs from (SWRR US and EU, Jak X), only the PS2 game's own save is listed (not ghostldr's containers); the one SWRR runs as stays out of reach, and deleting another's (a save tool's Delete, e.g. Jak X's UltraC0re save) is named on screen. |
-| Save tools | Tools made for jailbroken consoles mount saves with `libSceFsInternalForVsh` and read the system's `savedata.db`. Here `libSceFsInternalForVsh` is a virtual module (`hle_fsvsh.c`): `sceFsMountSaveData` of `/user/home/<user>/savedata/<TITLE>/sdimg_<DIR>` makes a writable working copy. It uses a normal read-only mount with the fingerprint from a keystone file when one is available, or the H-RACE without one; at unmount, changed files go back through the raced read-write mount and commit when SWRR closes. A fingerprint mount refused for another account stays read-only. A save's own keystone is not readable from SWRR even during the race (measured EACCES on a 13.60 PS5), so without a supplied keystone nothing can be removed from the save. Before the write, the working copy is checked against the save as it was (a copy kept beside it): a write that would have to remove a file without the keystone, or whose files don't fit in the save's fixed size (its free blocks as the save service lists them, or `SAVEDATA_BLOCKS` less the file system's share), is refused with a box that says why and gives the numbers; the save is left as it was and the working copy goes back to it ([save-resign.md](save-resign.md#with-apollo-save-tool-under-ghostldr)). Apollo's Copy save game to HDD and Import decrypted save files copy over the save without deleting, as on a jailbroken PS4. Creating a save image is refused: one SWRR creates gets SWRR's keystone, which the real title rejects. `/system_data/savedata/<user>/db/user/savedata.db` reads as a SQLite file listing the saves of every title a keystone, a cheat file (also those named in the tool's bundled `appdata.zip`), `/data/ghostldr/titles.txt`, a save folder on a USB drive (`PS4/APOLLO/<user>_<TITLE>_<DIR>`, `PS4/SAVEDATA/<account>/<TITLE>`) or an exploit (Jak X, the other region's SWRR) names (the service answers only for exact title IDs, about 0.4 s each): the answers are kept per user in `/data/ghostldr/savesearch.txt`, a title without saves is asked again after 7 days (or a day, in the background while the tool runs), and the game selector's save scan asks about the rest before the tool starts ([selector.md](selector.md#save-tools-apollo-save-tool)). A tool run for a user picked in the selector gets that user from `sceUserServiceGetInitialUser`, and its saves; its own settings save, `/data` and the pad stay the SWRR user's. What can't work on a stock console says so in a box at the bottom of the screen, once per session: registry writes (`sceRegMgrSet*`, offline account activation: refused), encrypted saves on USB, trophies, and new save images. |
+## Apollo Save Tool
 
-`ghostldr/tests/homebrew/` holds `hbprobe`, a small MIT test homebrew (built with the OpenOrbis toolchain: `make OO_PS4_TOOLCHAIN=...`). It checks the rows above and logs `hbprobe: PASS ...`/`FAIL ...` lines and a summary, then shows a framebuffer where each pad button lights a box. `hbprobe-sys` is the same program with the system's libc. `hbrel` (`HBRL00106`) checks save data memory (8 MiB, written in one boot and read back in the next), how much a save holds, its own two prx (one imported, one loaded at run time) and Piglet's GLES2 on the GPU: points, lines, YUV, NV12, NV21, a render target, scaled textures and blending, the same frame every frame for `-DGLES_CHECK=1`.
+Apollo Save Tool for PS4 runs under ghostldr on a stock PS5, on the saves of the console's signed-in users.
 
-### Tried on hardware
+- **Whose saves:** the selector asks which user's saves to open, then looks for that user's saves (the first time can take two minutes; hold Circle to cancel).
+- **What works:** Apply cheats, Import decrypted save files, Copy save game to HDD, and resign, into a save the game already has. An import copies its files over the save and deletes nothing.
+- **Close SWRR afterwards.** A box at the bottom of the screen says so: the system commits the save when SWRR closes. Apollo's own "success" message isn't the end.
+- **Refused, with a message** that says why and "Nothing was changed":
+  - the files don't fit (a save's size is fixed);
+  - a file would have to be removed and there is no keystone for the game.
+- **What can't work** on a stock console: a new save for a game that has none (start the game and save once, then copy over that save), another account's saves, trophies, encrypted saves on USB, and activating accounts.
 
-A stock 13.60 PS5 with US SWRR (or the PS4 a row names), each title installed next to Ghost and booted with `run.py boot --app-root ghostfs --title ...`:
+## Known limits
 
-| Title | Result |
-|---|---|
-| `HBPROBE` (tests/homebrew, musl) | 24 of 24: stdout/stderr lines, `/app0` files (fopen, fgets, fseek, readdir, pread), a `/temp0` file, 192 MiB of 4 MiB mallocs plus one 160 MiB block in the flexible budget, thread-specific data, threads with their own thread-local variables, two 1080p framebuffers on screen, pad buttons light their boxes. Holding OPTIONS logs `title called _exit(3)` and SWRR ends. |
-| `HBPR00002` (hbprobe with the system's libc) | The same, through the extension's heap and stdio families (`libc fopen ... a title file`), 22 of 22. |
-| `FONT` (OpenOrbis sample) | `libSceFreeType` loads as `libSceFreeTypeOl.sprx`, the font comes from ghostfs (`FT_New_Face(...): 163692 bytes from ghostfs`), the text renders as in the sample's screenshot (white on black: the sample never clears its framebuffers, so this needed zeroed memory). |
-| `INPUT` (OpenOrbis sample) | Its 16 PNGs load from `/app0` (stb_image through musl's stdio), the controller picture shows, and CROSS and L1 light up while held. |
-| `AUDIO-WAV` (OpenOrbis sample) | It decodes its 27 MiB wav from `/app0` into malloc'd memory and loops it through `sceAudioOutOutput`: the console's HDMI audio carries it (mean -9.7 dB, against -52.9 dB while a silent sample runs). |
-| `EXCEPTIONS` (OpenOrbis sample) | C++ exceptions thrown and caught (`Caught! The exception says: Catch me if you can. :p`, `Testcase PASS`). It crashed in SWRR's `pthread_setspecific` at the first throw until thread-specific data became the extension's. |
-| `HELLO_WORLD` (OpenOrbis sample) | `Hello world! Waiting 2 seconds!`, then two seconds later `Done. Infinitely looping...`. |
-| `HBRL00106` (tests/homebrew `hbrel`), PS4 Pro 12.50, EU SWRR | 54 of 54 (55 with the later `libkernel_sys` check). An 8 MiB save data memory written in one boot is read back unchanged in the next, after SWRR was closed (four boots in a row); a 96-block save holds 103 blocks of files and a 1000-block one 1032. `libhbmod.prx` loads at boot, `libhbdyn.prx` at run time, with its imports from `libhbmod` and libkernel and a per-thread variable. Its GLES2 scene draws on the GPU, and with `-DGLES_CHECK=1` the GPU's frame and the software path's agree but for rounding: points, the fan of lines, render targets, nearest scaling (pixel centres on texel edges included) and blending identical, the rest within 2, linearly filtered YUV within 4. |
-| `HBRL00106` (hbrel), PS5 13.60, US SWRR | 55 of 55, the GPU check as on the PS4 (within 2, linearly filtered YUV within 4). |
-| `BREW00089` (OpenOrbis `using_library` sample), PS4 Pro 12.50 | `sceKernelLoadStartModule("/app0/sce_module/libExample.prx")` and `sceKernelDlsym` of its C++ function: `test string: Hi I'm from the library! You passed: 13371338 \| rv = 0x00000000`. |
-
-### Limits
-
-- **PS4-Xplorer 1.34 (`LAPY20001`, Unity) is not listed as compatible.** It boots: its Unity runtime and Mono start, its plugins load, the pad drives its menus into its file browser (which sees SWRR's sandbox), and its save data memory and PlayerPrefs are kept across SWRR restarts. But it shows its firmware menu again on every launch (why is not known).
-- **Title prx:** a prx never unloads (its code and data stay where they are); a run-time prx with initial-exec TLS (Sony's toolchain, not OpenOrbis's) cannot load after boot, since every thread's static TLS is laid out by then.
-- **Initialized thread-local variables:** `create-fself` sets the TLS segment's alignment to 32 whatever lld laid it out with; ghostldr places the initial values as the segment says, as a PS4 does, so when the segment's size isn't a multiple of 32 they can land a few bytes off (seen on hardware: `hbprobe-sys`'s starts at 0, not 7). Zero-initialized ones are fine.
-- **`stat` sizes:** OpenOrbis's musl declares `struct stat` with 32-bit `mode_t` and `nlink_t`, so from `st_atim` on its fields sit 8 bytes past the kernel's (FreeBSD's, which SWRR's kernel fills, measured on a `/temp0` file, and so does ghostfs): `st_size` reads the kernel's `st_blocks`. The file type bits are right. The same happens on a PS4; `lseek(fd, 0, SEEK_END)` gives the size.
-- **Exiting** ends SWRR (see Exit).
-- **`scePthreadSetspecific`** (the SCE name) faults in SWRR's libkernel on a homebrew thread just as `pthread_setspecific` did (address 0x70, the first value a thread stores; seen with hbprobe). Only the POSIX names are answered by the extension: Ghost imports the SCE ones, and they stay SWRR's.
-- **Other host modules that open title files themselves** (beyond FreeType's fonts) don't see ghostfs: SWRR's own file calls know only SWRR's `/app0`.
-- Audio is what SWRR's own modules give. **Dialogs are drawn where they can be:** when the screen shows a frame drawn into a linear buffer the CPU may write (homebrew that draws itself, or through ghostldr's Piglet, on the GPU or not), a MsgDialog (messages, yes/no, OK/cancel, wait, progress) and an ImeDialog (an on-screen keyboard: d-pad, Cross types, Square deletes, Triangle space, L1/R1 move, L2 shift, R2 done, Circle back) are drawn over the title's frames (`dlg_overlay.c`) and answered with the controller, which the title doesn't see meanwhile. Elsewhere (GPU titles such as Ghost, `run.py --dialog-auto`, a profile's `dialogs_auto` feature) they are answered at once and logged, as before.
-- **Save tools reach less than on a jailbroken console:** they cannot create a valid new save, read another account's save, change `sce_sys`, or reach trophies. Existing saves of the selected user can be read and changed without a keystone through the H-RACE; with no keystone nothing can be removed from a save (such a change is refused, the save unchanged), and no save can grow past its size.
+- **Memory.** SWRR has 4.5 GiB on a PS5. A game that needs more needs a memory plan, which only Ghost and Bloodborne have so far; others learn one over their first boots. "The game needs more memory than SWRR has" means it can't run yet.
+- **Code size.** Game code can run only in the PS2 emulator's JIT memory, about 65 MiB in all. Larger executables are spread over it. "There's no room for the game's code" means it didn't fit, or the last game left too little: restart SWRR.
+- **USB drives:** up to four drives and 64 games, four folders deep, paths up to about 250 bytes. FAT32 holds no file of 4 GiB or more. The PS5 must use the drive as USB storage, not extended storage.
+- **Dumps:** decrypted, with the update merged in. DLC isn't loaded.
+- **Progress** is in SWRR's saved data, per SWRR region and PSN user, never on the drive.
+- **System dialogs** are drawn only over games that draw with the CPU (most homebrew). Over other games (Ghost, Bloodborne) they are answered at once.
+- **The selector** shows names in Japanese, Chinese and Korean as the title ID, and has no sound.
+- **Back to the selector:** system libraries a game loaded stay loaded, and a few of its threads may be parked until SWRR closes.

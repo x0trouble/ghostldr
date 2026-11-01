@@ -1,5 +1,5 @@
 /*
- * Route B's console side (docs/usb.md): the USB storage stack's environment
+ * Route B's console side: the USB storage stack's environment
  * inside the extension, and SWRR's libSceUsbd as the transport's struct
  * usbd_ops.  approot.c calls usb_attach before the title's modules load,
  * when the app root is on a USB drive that AutoMounter could not mount
@@ -11,7 +11,7 @@
  * it are virtual (hle_peripheral.c: no devices); these calls go to SWRR's
  * module directly.
  *
- * Built only with USB_RAW=1 (docs/usb.md): on a 13.60 PS5, SWRR's
+ * Built only with USB_RAW=1: on a 13.60 PS5, SWRR's
  * libSceUsbd initializes but lists no devices, so this finds no drive.  The
  * sandbox's /dev/ugenB.A nodes are world read-write and FreeBSD's libusb20
  * calls on them (descriptors, USB_DO_REQUEST, USB_FS_INIT/OPEN/START/

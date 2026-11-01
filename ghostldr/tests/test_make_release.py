@@ -1,4 +1,4 @@
-"""tools/make_release.py (docs/host-tooling.md, "Making a release"), offline:
+"""tools/make_release.py, offline:
 the five files, their checksums, the flat reproducible zip, and the check that
 nothing of the maintainer's computer goes out.
 

@@ -6,7 +6,7 @@ body:
     attributes:
       value: |
         For how far a particular game gets, use the **Game compatibility report** instead.
-        [When something goes wrong](https://github.com/asylumexp/ghostldr/blob/main/docs/failures.md) explains every message ghostldr shows on the TV and what to do about it; check it first.
+        [When something goes wrong](https://github.com/asylumexp/ghostldr/blob/main/docs/using-the-release.md#when-something-goes-wrong) explains what ghostldr shows on the TV and what to do about it; check it first.
 
   - type: dropdown
     id: area

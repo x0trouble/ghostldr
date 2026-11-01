@@ -1,4 +1,4 @@
-# The ELF loader's sample payloads (docs/elfldr.md), into build/elfldr/:
+# The ELF loader's sample payloads, into build/elfldr/:
 #
 #   hello.elf          OpenOrbis: printf, threads with TLS, malloc, exit code 7
 #   echo.elf           OpenOrbis: a TCP echo server on port 9025
