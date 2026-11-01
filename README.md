@@ -8,7 +8,7 @@ ghostldr runs PS4 game dumps and OpenOrbis homebrew inside *Star Wars Racer Reve
 
 ## What you need
 
-- A PS5 on firmware 13.60 or later.
+- A PS5 on firmware 13.60 or later. (or PS4 on 13.52 or later).
 - SWRR, US (CUSA03474) or EU (CUSA03492), with Luac0re 2.4b working.
 - Your own game dump: a folder with `eboot.bin` in it. No game files are included.
 - An exFAT USB drive for the games (recommended). Without one, games can be installed into SWRR's saved data over the network.
