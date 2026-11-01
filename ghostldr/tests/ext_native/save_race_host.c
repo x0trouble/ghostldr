@@ -6,10 +6,17 @@
  *
  *     save_race_host ROOT SCENARIO TITLE DIR SRC FP|- BACKUP|- [check|noexit]
  *     save_race_host ROOT SCENARIO TITLE DIR - FP - fsvsh|fsvsh-same
+ *     save_race_host ROOT SCENARIO TITLE DIR IMPORT|- FP|- REMOVE|- fsvsh-import
  *
  * fsvsh: a save tool's mount (hle_fsvsh.c, sceFsMountSaveData) of the save,
  * writes through the tool's own mount path (VMC0.card rewritten, cheat.txt
  * made), and its unmount; fsvsh-same: the same with nothing changed.
+ * fsvsh-import: Apollo's "Copy save game to HDD" / "Import decrypted save
+ * files": the files of the console folder IMPORT copied over the mount
+ * (nothing removed), then REMOVE (a path below the mount) removed if given.
+ * The save service's size and free blocks for the import check come from
+ * FAKE_SPACE (save_race_os.c os_space).  Prints "fsvsh: mount again" and the
+ * tool's view after the unmount (a refused write puts the copy back).
  *
  *     save_race_host ROOT SCENARIO SAVES USER STOP - - prescan
  *
@@ -212,8 +219,17 @@ static s64 h_vfs_lseek(int fd, s64 off, int whence)
 static void *h_direct_alloc(size_t n, int prot, u64 fixed) { return os_calloc(n); }
 static void h_direct_free(void *p) { os_free(p); }
 
-/* save_race_os.c: a file of the fake console written whole */
+/* save_race_os.c: a file of the fake console written whole; a folder copied over another; a path removed; the save
+ * service's numbers */
 int os_put(const char *console_path, const void *data, u64 n);
+int os_copy_over(const char *src, const char *dst);
+int os_remove(const char *console_path);
+int os_space(u64 *blocks, u64 *free_blocks);
+
+s32 savedata_foreign_space(s32 user, const char *tid, const char *dir, u64 *blocks, u64 *free_blocks)
+{
+    return os_space(blocks, free_blocks) == 0 ? 0 : (s32)0x809F0008;
+}
 
 static void *fam_fn(const char *name)
 {
@@ -223,7 +239,7 @@ static void *fam_fn(const char *name)
     return NULL;
 }
 
-int host_fsvsh(const char *fp, int change)
+int host_fsvsh(const char *fp, int change, const char *import, const char *remove)
 {
     G = &g_api;
     g_vfs = change >= 2; /* fsvsh-learn(-ro): no fingerprint given, the files of the fake console's /data and USB */
@@ -241,7 +257,16 @@ int host_fsvsh(const char *fp, int change)
     const char *mp = "/data/apollo/mount/SCUS-97429";
     s32 rc = mount(opt, "/user/home/10000000/savedata/CUSA07992/sdimg_SCUS-97429", mp, key);
     hlog("fsvsh: mount -> %x", (u32)rc);
-    if (rc == 0 && change && change != 3) {
+    if (rc == 0 && change == 4) {
+        char buf[320], at[160];
+        const char *h = g_hook(mp, buf, sizeof(buf));
+        if (import)
+            os_copy_over(import, h);
+        if (remove) {
+            fmt(at, sizeof(at), "%s/%s", mp, remove);
+            os_remove(g_hook(at, buf, sizeof(buf)));
+        }
+    } else if (rc == 0 && change && change != 3) {
         char buf[320];
         const char *h = g_hook("/data/apollo/mount/SCUS-97429/VMC0.card", buf, sizeof(buf));
         static u8 card[70000];
@@ -253,6 +278,11 @@ int host_fsvsh(const char *fp, int change)
         os_put(h, "resigned by the tool", 20);   /* never written into the save */
     }
     s32 urc = rc == 0 ? umount(opt, mp, 0, 0) : rc;
+    if (rc == 0 && change == 4 && mount(opt, "/user/home/10000000/savedata/CUSA07992/sdimg_SCUS-97429", mp, key) == 0) {
+        char buf[320];
+        hlog("fsvsh: mount again: the tool's view in %s", g_hook(mp, buf, sizeof(buf)));
+        umount(opt, mp, 0, 0);
+    }
     hlog("RESULT rc=%x mount=%x why=", (u32)urc, (u32)rc);
     return 0;
 }

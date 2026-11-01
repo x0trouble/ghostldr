@@ -37,6 +37,12 @@
  *     service binds and then refuses (save_race_write): the save keeps its
  *     owner and keystone, and the system commits it when SWRR closes.
  *     What the tool writes into sce_sys is not written (the system owns it).
+ *     First the copy is checked against <copy>.base, the save as it was
+ *     (save_import_check): a file it lacks can be removed only with the
+ *     keystone, and its files must fit in the save's fixed size.  If not,
+ *     nothing is asked of the save, the copy goes back to the save as it is
+ *     and a box says why.  (Apollo's "copy to HDD" and "import decrypted
+ *     files" copy over the save and delete nothing, as on a jailbroken PS4.)
  *   - libkernel_sys.sprx, which such tools load for statfs, is a virtual
  *     module with nothing in it: loading a second libkernel into SWRR is not
  *     something to try.
@@ -63,6 +69,7 @@ static struct {
     char host[128]; /* a working copy (save_race.c): a host path, or */
     bool rw;        /* a writable copy, written into the save at the unmount when it changed: */
     u64 digest;     /* its files when the tool got it (save_tree_digest) */
+    u64 had;        /* the blocks the save's files took when the copy was made (save_tree_blocks) */
     s32 user;
     char tid[16], dir[32], fp[65];
 } g_alias[NALIAS];
@@ -71,7 +78,8 @@ static struct {
 #define NRW 8
 static struct {
     char key[48];
-    char host[128];
+    char host[128]; /* the copy; <host>.base: the save as it is, for the checks before a write and an undo */
+    u64 had;
 } g_rw[NRW];
 
 /* copies made this session, reused: each made one mount that stays */
@@ -290,7 +298,7 @@ static void say_race_write(const char *tid)
     char line[256];
     fmt(line, sizeof(line), "No keystone for %.9s: changes use the save mount race.\n"
                             "Close SWRR from the PS button menu after saving so the system commits them.\n"
-                            "Files already in the save but absent from the new copy are kept.", tid);
+                            "Without the game's keystone no file can be removed from the save.", tid);
     ov_banner(line, 30);
 }
 
@@ -304,6 +312,35 @@ static void keystone_into(const char *host, s32 user, const char *tid)
         return;
     fmt(p, sizeof(p), "%s/sce_sys/keystone", host);
     put_file(p, ks, sizeof(ks));
+}
+
+/* this session's writable copy of the save ckey names: host and the blocks its files took (host stays "" if none) */
+static void rw_find(const char *ckey, char host[128], u64 *had)
+{
+    for (u32 c = 0; c < NRW && !host[0]; c++)
+        if (strcmp(g_rw[c].key, ckey) == 0)
+            strlcpy(host, g_rw[c].host, 128), *had = g_rw[c].had;
+}
+
+/* a writable copy just made in dst: kept for the session, with <dst>.base, the save as it is (what a write is
+ * checked against, and what the copy goes back to when a write is refused) */
+static void rw_keep(const char *ckey, const char *dst, char host[128], u64 *had)
+{
+    char base[160];
+    fmt(base, sizeof(base), "%s.base", dst);
+    s32 rc = save_tree_copy(dst, base, false);
+    *had = save_tree_blocks(base);
+    if (rc != 0)
+        logf("fsvsh: %s: the copy of the save as it is (%s) is missing files (%x): a write will be refused", ckey,
+             base, (u32)rc);
+    strlcpy(host, dst, 128);
+    for (u32 c = 0; c < NRW; c++)
+        if (!g_rw[c].key[0]) {
+            strlcpy(g_rw[c].key, ckey, sizeof(g_rw[c].key));
+            strlcpy(g_rw[c].host, dst, sizeof(g_rw[c].host));
+            g_rw[c].had = *had;
+            break;
+        }
 }
 
 /* int sceFsMountSaveData(MountSaveDataOpt *, const char *volume, const char *mountPath, u8 key[32]) */
@@ -327,49 +364,34 @@ static s32 vsh_mount(const void *opt, const char *volume, const char *mount_path
     }
     char mp[16], host[128], ckey[48];
     mp[0] = host[0] = 0;
+    u64 had = 0;
     bool fp_known = savedata_fingerprint(user, tid, fp), rw = false;
     if (!fp_known && keystone_from_usb(tid))
         fp_known = savedata_fingerprint(user, tid, fp);
     fmt(ckey, sizeof(ckey), "%08x/%s/%s", (u32)user, tid, dir);
     s32 rc = E_ACCES_;
     if (fp_known) { /* a writable copy (see the top), made once per session */
-        for (u32 c = 0; c < NRW && !host[0]; c++)
-            if (strcmp(g_rw[c].key, ckey) == 0)
-                strlcpy(host, g_rw[c].host, sizeof(host));
+        rw_find(ckey, host, &had);
         if (!host[0]) {
             char dst[128];
             fmt(dst, sizeof(dst), "/temp0/ghostldr/%s/rw/%08x_%s_%s", title_ident(), (u32)user, tid, dir);
             if (save_fp_copy(user, tid, dir, fp, dst) == 0) {
                 keystone_into(dst, user, tid);
-                strlcpy(host, dst, sizeof(host));
-                for (u32 c = 0; c < NRW; c++)
-                    if (!g_rw[c].key[0]) {
-                        strlcpy(g_rw[c].key, ckey, sizeof(g_rw[c].key));
-                        strlcpy(g_rw[c].host, dst, sizeof(g_rw[c].host));
-                        break;
-                    }
+                rw_keep(ckey, dst, host, &had);
             }
         }
         rw = host[0] != 0;
         rc = rw ? 0 : savedata_foreign_mount(user, tid, dir, fp, mp);
     }
     if (!fp_known) { /* no fingerprint: make the working copy through H-RACE and commit it the same way */
-        for (u32 c = 0; c < NRW && !host[0]; c++)
-            if (strcmp(g_rw[c].key, ckey) == 0)
-                strlcpy(host, g_rw[c].host, sizeof(host));
+        rw_find(ckey, host, &had);
         if (!host[0]) {
             char dst[128];
             fmt(dst, sizeof(dst), "/temp0/ghostldr/%s/rw/%08x_%s_%s", title_ident(), (u32)user, tid, dir);
             s32 rc2 = save_race_rw_copy(user, tid, dir, dst);
             if (rc2 != 0)
                 return rc2;
-            strlcpy(host, dst, sizeof(host));
-            for (u32 c = 0; c < NRW; c++)
-                if (!g_rw[c].key[0]) {
-                    strlcpy(g_rw[c].key, ckey, sizeof(g_rw[c].key));
-                    strlcpy(g_rw[c].host, dst, sizeof(g_rw[c].host));
-                    break;
-                }
+            rw_keep(ckey, dst, host, &had);
         }
         rw = true, rc = 0;
         say_race_write(tid);
@@ -409,6 +431,7 @@ static s32 vsh_mount(const void *opt, const char *volume, const char *mount_path
         memcpy(g_alias[i].mp, mp, 16);
         strlcpy(g_alias[i].host, host, sizeof(g_alias[i].host));
         g_alias[i].rw = rw;
+        g_alias[i].had = had;
         g_alias[i].user = user;
         strlcpy(g_alias[i].tid, tid, sizeof(g_alias[i].tid));
         strlcpy(g_alias[i].dir, dir, sizeof(g_alias[i].dir));
@@ -448,23 +471,52 @@ static s32 vsh_umount(const void *opt, const char *mount_path, s32 handle, u32 i
     if (copy && g_alias[i].rw) { /* a writable copy: into the save if the tool changed it */
         s32 rc = 0;
         if (save_tree_digest(g_alias[i].host) != g_alias[i].digest) {
-            char backup[160];
-            fmt(backup, sizeof(backup), "%s.before", g_alias[i].host);
-            struct save_race_result r;
-            rc = save_race_write(g_alias[i].user, g_alias[i].tid, g_alias[i].dir, g_alias[i].host,
-                                 g_alias[i].fp[0] ? g_alias[i].fp : NULL, backup, &r);
-            if (rc == 0)
-                g_alias[i].digest = save_tree_digest(g_alias[i].host);
-            logf("fsvsh: %s:%s: the tool's changes -> %x%s", g_alias[i].tid, g_alias[i].dir, (u32)rc,
-                 r.needs_exit ? ": written into the save; CLOSE SWRR to keep them (the system commits the save "
-                                "when SWRR closes)" : "");
-            char line[160];
-            if (rc == 0 && r.needs_exit)
-                ov_banner("Saved. To finish saving, close SWRR from the PS button menu.", 0);
-            else if (rc != 0) {
-                fmt(line, sizeof(line), "The changes to %s %s could not be written into it (error %x).", g_alias[i].tid,
-                    g_alias[i].dir, (u32)rc);
-                ov_banner(line, 30);
+            const char *host = g_alias[i].host, *tid = g_alias[i].tid, *dir = g_alias[i].dir;
+            const char *fp = g_alias[i].fp[0] ? g_alias[i].fp : NULL;
+            char backup[160], base[160];
+            fmt(backup, sizeof(backup), "%s.before", host);
+            fmt(base, sizeof(base), "%s.base", host);
+            /* first what the write would have to do: remove what the copy lacks (only with the keystone), and fit
+             * in the save's fixed size.  A refusal changes nothing in the save; the copy goes back to the save as
+             * it is, so the tool sees the save as it is the next time it mounts it. */
+            struct save_import_check ck;
+            rc = save_import_check(g_alias[i].user, tid, dir, base, host, g_alias[i].had, fp != NULL, &ck);
+            if (rc != 0) {
+                s32 back = save_tree_copy(base, host, false);
+                logf("fsvsh: %s:%s: the tool's changes were not written (%x); its copy back as the save is -> %x%s",
+                     tid, dir, (u32)rc, (u32)back, back ? ": the copy is dropped, the next mount makes a new one" : "");
+                if (back != 0) { /* the copy is gone (save_tree_copy): the next mount copies the save again */
+                    char ckey[48];
+                    fmt(ckey, sizeof(ckey), "%08x/%s/%s", (u32)g_alias[i].user, tid, dir);
+                    for (u32 c = 0; c < NRW; c++)
+                        if (strcmp(g_rw[c].key, ckey) == 0)
+                            g_rw[c].key[0] = 0;
+                }
+                ov_banner(ck.why, 60);
+            } else {
+                struct save_race_result r;
+                rc = save_race_write(g_alias[i].user, tid, dir, host, fp, backup, &r);
+                logf("fsvsh: %s:%s: the tool's changes -> %x%s", tid, dir, (u32)rc,
+                     r.needs_exit ? ": written into the save; CLOSE SWRR to keep them (the system commits the save "
+                                    "when SWRR closes)" : "");
+                if (rc == 0) { /* the save as it is now, for the next check (sce_sys stays the save's) */
+                    save_tree_copy(host, base, true);
+                    if (r.committed) { /* committed at once: the save service's numbers are the new ones */
+                        char ckey[48];
+                        fmt(ckey, sizeof(ckey), "%08x/%s/%s", (u32)g_alias[i].user, tid, dir);
+                        for (u32 c = 0; c < NRW; c++)
+                            if (strcmp(g_rw[c].key, ckey) == 0)
+                                g_rw[c].had = save_tree_blocks(base);
+                    }
+                }
+                char line[160];
+                if (rc == 0 && r.needs_exit)
+                    ov_banner("Saved. To finish saving, close SWRR from the PS button menu.", 0);
+                else if (rc != 0) {
+                    fmt(line, sizeof(line), "The changes to %s %s could not be written into it (error %x).", tid,
+                        dir, (u32)rc);
+                    ov_banner(line, 30);
+                }
             }
         }
         spin_lock(&g_alias_lock);

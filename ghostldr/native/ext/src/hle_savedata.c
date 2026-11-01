@@ -1375,6 +1375,35 @@ s32 savedata_foreign_search(s32 user, const char *tid, char (*dirs)[32], struct 
     return rc;
 }
 
+s32 savedata_foreign_space(s32 user, const char *tid, const char *dir, u64 *blocks, u64 *free_blocks)
+{
+    s32 (*search)(const struct sd_search_cond *, struct sd_search_result *) = real_sd(RS_SEARCH);
+    if (!tid || !dir || !foreign_title(tid) || !search)
+        return E_PARAMETER;
+    char t[16], d[32], dirs[4][32];
+    struct sd_mount_info infos[4];
+    memset(t, 0, sizeof(t)), memset(d, 0, sizeof(d)), memset(dirs, 0, sizeof(dirs)), memset(infos, 0, sizeof(infos));
+    strlcpy(t, tid, 10);
+    strlcpy(d, dir, sizeof(d));
+    struct sd_search_cond c;
+    struct sd_search_result r;
+    memset(&c, 0, sizeof(c)), memset(&r, 0, sizeof(r));
+    c.user = user, c.title_id = t, c.dir = d; /* a pattern: '_' matches itself too; the exact name is picked below */
+    r.dirs = (char *)dirs, r.dirs_num = 4, r.infos = infos;
+    savedata_search_lock();
+    s32 rc = search(&c, &r);
+    savedata_search_unlock();
+    u32 n = rc == 0 ? MIN(MIN(r.set_num, r.hit_num), 4u) : 0;
+    for (u32 i = 0; i < n; i++)
+        if (strncmp(dirs[i], d, 32) == 0) {
+            *blocks = infos[i].blocks, *free_blocks = infos[i].free_blocks;
+            logf("savedata: %s:%s: %lu blocks, %lu free (the save service's list)", t, d, infos[i].blocks,
+                 infos[i].free_blocks);
+            return 0;
+        }
+    return rc ? rc : (s32)0x809F0008; /* NOT_FOUND */
+}
+
 /* keystone files where save tools keep them (title paths: /data is the title's own) */
 bool savedata_keystone(s32 user, const char *tid, u8 out[0x60])
 {

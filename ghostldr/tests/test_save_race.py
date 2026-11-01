@@ -59,6 +59,21 @@ def param_sfo_with_title(title: str) -> bytes:
             struct.pack("<HHIII", 0, 0x0204, 10, 12, 0) + key.ljust(12, b"\0") + data)
 
 
+def param_sfo(**entries: str | int) -> bytes:
+    """A param.sfo with these keys: str values as UTF-8 (0x0204), int values as 8 bytes (0x0004)."""
+    import struct
+    keys, data, index = b"", b"", b""
+    for k, v in entries.items():
+        raw, kind = (v.encode() + b"\0", 0x0204) if isinstance(v, str) else (struct.pack("<Q", v), 0x0004)
+        raw = raw.ljust((len(raw) + 3) & ~3, b"\0")
+        index += struct.pack("<HHIII", len(keys), kind, len(raw), len(raw), len(data))
+        keys += k.encode() + b"\0"
+        data += raw
+    keys = keys.ljust((len(keys) + 3) & ~3, b"\0")
+    key_off = 0x14 + len(index)
+    return b"\0PSF" + struct.pack("<IIII", 0x101, key_off, key_off + len(keys), len(entries)) + index + keys + data
+
+
 TARGET = {"sce_sys/param.sfo": PARAM, "sce_sys/keystone": KEYSTONE, "sce_sys/icon0.png": b"png",
           "VMC0.card": b"\x01" * 70000, "VMC1.card": b"\x02" * 1000, "trophy.dat": b"T" * 300,
           "lua/init.lua": b"-- ultrac0re", "lua/sub/x.lua": b"x", "old.bin": b"old"}
@@ -363,6 +378,117 @@ class SaveToolWrites(SaveRaceBase):
         self.assertEqual(got["lua/init.lua"], TARGET["lua/init.lua"])
         self.assert_sce_sys_untouched()
         self.assertTrue(any("CLOSE SWRR to keep them" in ln for ln in lines), "\n".join(lines))
+
+    # ---- Apollo's "Copy save game to HDD" / "Import decrypted save files" into an existing save ----
+    # Apollo (v2.4.0 _copy_save_hdd / encryptSaveFile) mounts the save and copies the files over it: nothing is
+    # removed, so a file the save has and the import lacks stays, as on a jailbroken PS4.  ghostldr checks the copy
+    # against the save as it was before anything is written: what would have to be removed (only with the keystone)
+    # and whether it fits (a save's size is fixed).
+
+    IMPORT = {"sce_sys/param.sfo": b"\0PSF imported", "sce_sys/icon0.png": b"other png",
+              "VMC0.card": b"\x0C" * 70000, "VMC1.card": b"\x0D" * 1000, "trophy.dat": b"T" * 300,
+              "lua/init.lua": b"-- imported", "lua/sub/x.lua": b"y", "new.bin": b"from the import"}
+
+    def run_import(self, fp: str | None, remove: str | None = None, space: str | None = None,
+                   files: dict | None = None) -> tuple[dict, list[str], Path]:
+        write_tree(self.root / "temp0/import", files if files is not None else self.IMPORT)
+        env = {**os.environ, **({"FAKE_SPACE": space} if space else {})}
+        out = subprocess.run([str(self.exe), str(self.root), "ps5", TITLE, DIR, "/temp0/import", fp or "-",
+                              remove or "-", "fsvsh-import"], capture_output=True, text=True, timeout=120, env=env)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        lines = out.stdout.splitlines()
+        self.assertEqual([ln for ln in lines if ln.startswith("VIOLATION")], [], "\n".join(lines))
+        res = [ln for ln in lines if ln.startswith("RESULT ")]
+        self.assertEqual(len(res), 1, "\n".join(lines))
+        view = [ln.split(" in ", 1)[1] for ln in lines if ln.startswith("fsvsh: mount again")]
+        self.assertEqual(len(view), 1, "\n".join(lines))
+        return dict(re.findall(r"(\w+)=(\S*)", res[0])), lines, self.root / view[0].lstrip("/")
+
+    def assert_refused(self, r: dict, lines: list[str], view: Path, rc: str) -> None:
+        text = "\n".join(lines)
+        self.assertEqual((r["rc"], r["mount"]), (rc, "0"), text)
+        self.assertFalse([ln for ln in lines if ln.startswith("save_race: write")], text)   # nothing asked to write
+        self.assertEqual({k: v for k, v in tree(self.save).items() if v is not None}, TARGET)  # the save as it was
+        got = {k: v for k, v in tree(view).items() if v is not None and not k.startswith("sce_sys")}
+        self.assertEqual(got, {k: v for k, v in TARGET.items() if not k.startswith("sce_sys")})  # the copy back too
+        self.assertTrue(any(ln == "Nothing was changed." for ln in lines), text)
+
+    def test_import_that_fits_is_written_and_what_it_lacks_stays(self) -> None:
+        for fp in (FP, None):
+            with self.subTest(keystone=fp is not None):
+                self.tearDown(), self.setUp()
+                r, lines, view = self.run_import(fp)
+                self.assertEqual((r["rc"], r["mount"]), ("0", "0"), "\n".join(lines))
+                got = tree(self.save)
+                for k, v in self.IMPORT.items():
+                    if not k.startswith("sce_sys"):
+                        self.assertEqual(got[k], v, k)
+                self.assertEqual(got["old.bin"], TARGET["old.bin"])          # Apollo copies over: nothing removed
+                self.assert_sce_sys_untouched()
+                self.assertTrue(any("banner: Saved. To finish saving, close SWRR from the PS button menu." in ln
+                                    for ln in lines), "\n".join(lines))
+                self.assertTrue(any("import check" in ln and "-> 0" in ln for ln in lines))
+
+    def test_import_that_needs_a_removal_without_the_keystone_is_refused(self) -> None:
+        r, lines, view = self.run_import(None, remove="old.bin")
+        self.assert_refused(r, lines, view, "80020001")
+        text = "\n".join(lines)
+        self.assertIn("banner: Can't import: CUSA07992's save has 1 file(s) the imported save doesn't\n"
+                      "(first: old.bin), and without the game's keystone ghostldr can't remove them.\n"
+                      "Nothing was changed.", text)
+
+    def test_a_removed_folder_counts_its_files(self) -> None:
+        r, lines, view = self.run_import(None, remove="lua")
+        self.assert_refused(r, lines, view, "80020001")
+        self.assertIn("save has 2 file(s) the imported save doesn't\n(first: lua/", "\n".join(lines))
+
+    def test_import_that_needs_a_removal_with_the_keystone_is_written(self) -> None:
+        r, lines, _ = self.run_import(FP, remove="old.bin")
+        self.assertEqual((r["rc"], r["mount"]), ("0", "0"), "\n".join(lines))
+        got = tree(self.save)
+        self.assertNotIn("old.bin", got)
+        self.assertEqual(got["new.bin"], self.IMPORT["new.bin"])
+        self.assertEqual(got["lua/init.lua"], self.IMPORT["lua/init.lua"])
+        self.assert_sce_sys_untouched()
+
+    def test_import_too_big_for_the_save_is_refused(self) -> None:
+        big = dict(self.IMPORT, **{"big.bin": b"B" * (20 * 32768)})     # 21 blocks more (with new.bin); the save has 8 free
+        for fp in (FP, None):
+            with self.subTest(keystone=fp is not None):
+                self.tearDown(), self.setUp()
+                r, lines, view = self.run_import(fp, space="96,8", files=big)
+                self.assert_refused(r, lines, view, "8002001c")
+                self.assertIn("banner: Can't import: the files don't fit in CUSA07992's save.\n"
+                              "They need 992 KiB; its files have room for 576 KiB (a 3.0 MiB save), and a save can't "
+                              "grow here.\nNothing was changed.", "\n".join(lines))
+
+    def test_import_that_exactly_fills_the_save_is_written(self) -> None:
+        # the save's files take 10 blocks (VMC0.card 3, six more files, two folders), 8 free: 18 blocks of files fit
+        fill = dict(self.IMPORT, **{"fill.bin": b"F" * (7 * 32768)})     # new.bin 1 + fill.bin 7 = 8 more
+        r, lines, _ = self.run_import(FP, space="96,8", files=fill)
+        self.assertEqual(r["rc"], "0", "\n".join(lines))
+        self.assertEqual(tree(self.save)["fill.bin"], fill["fill.bin"])
+
+    def test_without_the_save_services_numbers_the_size_comes_from_param_sfo(self) -> None:
+        # SAVEDATA_BLOCKS 96: 48 for the file system, 4 for sce_sys (param.sfo, icon0.png, the keystone, the folder),
+        # so its files have room for 44 blocks; they take 10
+        (self.save / "sce_sys/param.sfo").write_bytes(param_sfo(TITLE_ID=TITLE, SAVEDATA_BLOCKS=96))
+        ok = dict(self.IMPORT, **{"more.bin": b"M" * (30 * 32768)})     # 10 + 1 + 30 = 41 blocks
+        r, lines, _ = self.run_import(FP, space="none", files=ok)
+        self.assertEqual(r["rc"], "0", "\n".join(lines))
+        self.tearDown(), self.setUp()
+        (self.save / "sce_sys/param.sfo").write_bytes(param_sfo(TITLE_ID=TITLE, SAVEDATA_BLOCKS=96))
+        target = {k: v for k, v in tree(self.save).items() if v is not None}
+        big = dict(self.IMPORT, **{"more.bin": b"M" * (40 * 32768)})    # 51 blocks
+        r, lines, view = self.run_import(FP, space="none", files=big)
+        self.assertEqual(r["rc"], "8002001c", "\n".join(lines))
+        self.assertEqual({k: v for k, v in tree(self.save).items() if v is not None}, target)
+        self.assertIn("its files have room for 1.3 MiB (a 3.0 MiB save, estimated)", "\n".join(lines))
+
+    def test_growth_without_any_size_is_refused(self) -> None:
+        r, lines, view = self.run_import(FP, space="none")    # TARGET's param.sfo has no SAVEDATA_BLOCKS
+        self.assert_refused(r, lines, view, "8002001c")
+        self.assertIn("can't tell how much room it has", "\n".join(lines))
 
     def test_an_unchanged_copy_writes_nothing(self) -> None:
         r, lines = self.run_tool("fsvsh-same")

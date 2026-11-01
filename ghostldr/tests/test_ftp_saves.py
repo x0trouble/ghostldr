@@ -277,6 +277,52 @@ class FtpSaves(unittest.TestCase):
         self.assertEqual(len([ln for ln in lines if ln.startswith("race_copy")]), 1, "\n".join(lines))
         self.assertEqual(len([ln for ln in lines if ln.startswith("race_write")]), 1, "\n".join(lines))
 
+    def test_no_keystone_a_file_of_the_save_is_not_removed(self) -> None:
+        # the race can't remove a file: deleting or renaming away one the save has is refused at once; one made since
+        # the copy can go
+        save = self.root / f"saves/{ALICE}/CUSA00001/SAVE0"
+        r, lines = self.run_script("rm /saves/Alice/CUSA00001/SAVE0/data.bin",
+                                   "mv /saves/Alice/CUSA00001/SAVE0/data.bin /saves/Alice/CUSA00001/SAVE0/b.bin",
+                                   "put /saves/Alice/CUSA00001/SAVE0/tmp.bin t",
+                                   "rm /saves/Alice/CUSA00001/SAVE0/tmp.bin",
+                                   "cat /saves/Alice/CUSA00001/SAVE0/data.bin")
+        self.assertEqual(r["rm /saves/Alice/CUSA00001/SAVE0/data.bin"], "error 1", "\n".join(lines))
+        self.assertEqual(r["mv /saves/Alice/CUSA00001/SAVE0/data.bin"], "error 1")
+        self.assertEqual(r["rm /saves/Alice/CUSA00001/SAVE0/tmp.bin"], "error 0")
+        self.assertEqual(r["cat /saves/Alice/CUSA00001/SAVE0/data.bin"], "nokey")
+        self.assertEqual(sorted(p.name for p in save.iterdir()), ["data.bin"])
+        self.assertEqual((save / "data.bin").read_bytes(), b"nokey")
+        self.assertTrue(any("nothing can be removed from it" in ln for ln in lines), "\n".join(lines))
+
+    def test_with_the_keystone_a_file_can_be_removed(self) -> None:
+        save = self.root / f"saves/{ALICE}/CUSA07992/SCUS-97429"
+        self.put(f"saves/{ALICE}/CUSA07992/SCUS-97429/old.bin", b"old")
+        r, lines = self.run_script("rm /saves/Alice/CUSA07992/SCUS-97429/old.bin", "sleep 200", "idle")
+        self.assertEqual(r["rm /saves/Alice/CUSA07992/SCUS-97429/old.bin"], "error 0")
+        self.assertEqual(len([ln for ln in lines if ln.startswith("race_write")]), 1, "\n".join(lines))
+        self.assertFalse((save / "old.bin").exists())
+        self.assertTrue(any(ln.startswith("import_check") and "1 to remove" in ln for ln in lines))
+
+    def test_files_that_do_not_fit_are_not_written(self) -> None:
+        # a save's size is fixed: the commit is refused, the save unchanged, the copy back as the save is
+        save = self.root / f"saves/{ALICE}/CUSA07992/SCUS-97429"
+        self.put(f"saves/{ALICE}/CUSA07992/SCUS-97429/.room", b"20")
+        r, lines = self.run_script("title G00900",
+                                   "put /saves/Alice/CUSA07992/SCUS-97429/big.bin " + "B" * 40,
+                                   "sleep 200", "idle",
+                                   "cat /saves/Alice/CUSA07992/SCUS-97429/lua/a.lua",
+                                   "ls /saves/Alice/CUSA07992/SCUS-97429")
+        self.assertEqual([ln for ln in lines if ln.startswith("race_write")], [], "\n".join(lines))
+        self.assertFalse((save / "big.bin").exists())
+        self.assertEqual((save / "lua/a.lua").read_bytes(), b"jak x")
+        self.assertNotIn("big.bin", r["ls /saves/Alice/CUSA07992/SCUS-97429"])
+        self.assertTrue(any("banner: Can't import: the files don't fit in CUSA07992's save." in ln for ln in lines),
+                        "\n".join(lines))
+        # and a write that fits still goes in afterwards
+        _, lines = self.run_script("put /saves/Alice/CUSA07992/SCUS-97429/lua/a.lua small", "sleep 200", "idle")
+        self.assertEqual(len([ln for ln in lines if ln.startswith("race_write")]), 1, "\n".join(lines))
+        self.assertEqual((save / "lua/a.lua").read_bytes(), b"small")
+
     def test_changes_left_when_the_server_stops_are_written(self) -> None:
         _, lines = self.run_script("put /saves/Alice/CUSA07992/SCUS-97429/lua/a.lua late")
         self.assertEqual(len([ln for ln in lines if ln.startswith("race_write")]), 1)

@@ -137,6 +137,45 @@ s32 save_race_check(s32 user, const char *tid, const char *dir, const char *src,
 s32 save_fp_copy(s32 user, const char *tid, const char *dir, const char *fp, const char *dst);
 u64 save_tree_digest(const char *dir);
 
+/* ---- before a writable copy goes into its save (save tools, FTP /saves: save_race.c) ----
+ * base is the save as it was: a host folder kept beside the writable copy
+ * (save_tree_copy when the copy is made, again after each write), the
+ * blocks it took then in had (save_tree_blocks; 0: count base now).
+ * save_import_check says whether save_race_write can make the save hold
+ * exactly what the copy src holds, before anything is asked of the save
+ * service:
+ *   - an entry base has and src lacks must be removed, which only a write
+ *     with the game's fingerprint can (can_remove); without it: E_PERM;
+ *   - a save's size is fixed (no write here can grow its image): src's
+ *     files must fit in the room the save's files have, had plus its free
+ *     blocks as the save service lists them (savedata_foreign_space), or
+ *     estimated from base's sce_sys/param.sfo SAVEDATA_BLOCKS less the file
+ *     system's share; otherwise 0x8002001C (ENOSPC).
+ * Sizes are in 32 KiB blocks: each file takes at least one, each folder one.
+ * c->why is the text for the screen (lines split by '\n') when rc != 0. */
+struct save_import_check {
+    s32 rc;
+    u32 removed;       /* files base has and src lacks (folders if no file is missing) */
+    bool removed_dirs; /* removed counts folders */
+    u8 room_from;      /* 0 unknown, 1 the save service's free blocks, 2 the estimate from param.sfo */
+    u8 pad[2];
+    u64 had, need;     /* blocks of base's and of src's files and folders (sce_sys left out) */
+    u64 blocks, free;  /* the save's size and free blocks (room_from) */
+    char first[128];   /* the first entry that would have to go */
+    char why[256];
+};
+s32 save_import_check(s32 user, const char *tid, const char *dir, const char *base, const char *src, u64 had,
+                      bool can_remove, struct save_import_check *c);
+/* dst made a copy of the host folder src (sce_sys too, as far as it can be read); keep_sys: dst's own top
+ * sce_sys stays and src's is left out.  0, or an error: some file could not be copied (then, without keep_sys,
+ * dst is gone, so a check against it fails instead of missing a file). */
+s32 save_tree_copy(const char *src, const char *dst, bool keep_sys);
+/* the blocks a host folder's files and folders take (sce_sys at the top left out) */
+u64 save_tree_blocks(const char *dir);
+/* the size and free blocks of tid's save dir of user, as the save service lists it (DirNameSearch's
+ * SceSaveDataSearchInfo; hle_savedata.c).  0, or the service's error. */
+s32 savedata_foreign_space(s32 user, const char *tid, const char *dir, u64 *blocks, u64 *free_blocks);
+
 /* The title's /data, kept across SWRR sessions: the mount point of its
  * <prefix>D000SAVE container (made and mounted at the first call), or NULL
  * where there is none (no ghostfs title, no free mount point). */

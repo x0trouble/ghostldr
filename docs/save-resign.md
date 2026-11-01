@@ -71,17 +71,45 @@ To undo: run step 3 with the backup folder as the source.
 Apollo running under ghostldr gets the same writes with or without the game's
 keystone. With one (its built-in files, `/data/ghostldr/keystones/<TITLE>.keystone`,
 or one ghostldr learns from a decrypted save on USB), the initial copy uses a
-normal read-only fingerprint mount. Without one it uses the H-RACE, and files
-the working copy lacks stay in the save. In either case the change is written
-into the save when Apollo is done with it, and a box at the bottom of the screen
-says to close SWRR from the PS button menu to finish saving (it stays until SWRR
-closes; Apollo's own "success" message is not the end). That covers
-Apollo's **Apply cheats**, **Import decrypted save files**, **Copy save game
-to HDD** (into a save that exists) and **resign**; what Apollo writes into
-`sce_sys` (its resign's account-ID change) isn't written, and isn't needed.
-A copy to the HDD for a game that has **no save yet** can't be made: a save
-made here would carry SWRR's keystone, which the game refuses; the box says
-to start the game and save once, then copy over that save.
+normal read-only fingerprint mount. Without one it uses the H-RACE. Apollo
+works on that copy; when it is done with it, the change is written into the
+save, and a box at the bottom of the screen says to close SWRR from the PS
+button menu to finish saving (it stays until SWRR closes; Apollo's own
+"success" message is not the end). That covers Apollo's **Apply cheats**,
+**Import decrypted save files**, **Copy save game to HDD** (into a save that
+exists) and **resign**; what Apollo writes into `sce_sys` (its resign's
+account-ID change) isn't written, and isn't needed. A copy to the HDD for a
+game that has **no save yet** can't be made: a save made here would carry
+SWRR's keystone, which the game refuses; the box says to start the game and
+save once, then copy over that save.
+
+**Copy save game to HDD** and **Import decrypted save files** copy the files
+over the save (Apollo 2.4.0 mounts the save and copies the decrypted folder,
+or the one file, onto it, as it does on a jailbroken PS4): nothing is deleted
+first, so a file the save has and the imported save lacks stays in the save.
+Before anything is written, ghostldr compares Apollo's copy with the save as
+it was (kept beside the copy when it was made) and refuses, with a box that
+says why, when the write can't be done whole:
+
+- **A file would have to be removed** (Apollo, or another tool, deleted one
+  from its copy) and there is no keystone for the game: the H-RACE can't
+  remove files. The box says, for example, *Can't import: CUSA12345's save
+  has 1 file(s) the imported save doesn't (first: data/slot2.bin), and
+  without the game's keystone ghostldr can't remove them.* With the keystone
+  the file is removed.
+- **The files don't fit**: a save's size is fixed (no write here can grow
+  its image). The files may use what the save's files use now plus its free
+  space as the save service lists it (`sceSaveDataDirNameSearch`'s free
+  blocks); if the service has no numbers, the save's `SAVEDATA_BLOCKS` from
+  its `param.sfo` less the file system's share (48 blocks) and `sce_sys`.
+  Sizes count in 32 KiB blocks, each file at least one, each folder one. The
+  box gives the numbers: *They need 992 KiB; its files have room for 576 KiB
+  (a 3.0 MiB save)*.
+
+Either way it ends with *Nothing was changed*: the save service isn't asked
+for anything, and Apollo's copy goes back to the save as it is, so Apollo
+shows the save unchanged the next time it opens it. Otherwise the files are
+written and the box says to close SWRR, as above.
 
 ## How it works
 
@@ -142,6 +170,13 @@ What the writer does (`ghostldr/native/ext/src/save_race.c`):
   loader, `make -C ghostldr/payloads OO_PS4_TOOLCHAIN=...`), and the writer
   in `ghostldr/native/ext/src/save_race.c`, exported to payloads as
   `ghostldr_save_race_write` / `ghostldr_save_race_check`.
+- Before a save tool's or FTP's copy is written, `save_import_check`
+  (`save_race.c`) compares it with `<copy>.base`, the save as it was, and
+  sizes both up; `savedata_foreign_space` (`hle_savedata.c`) asks the save
+  service for the save's free blocks.
 - Offline tests: `test_save_race.py` runs the writer and the save-tool path
-  (`hle_fsvsh.c`) against a fake console that models the PS5's save service;
+  (`hle_fsvsh.c`, including Apollo's copy-over imports: written, refused for a
+  removal without the keystone, refused when too big, with the save and the
+  copy left as they were) against a fake console that models the PS5's save
+  service;
   `test_resign.py` the computer's side against a stand-in console.

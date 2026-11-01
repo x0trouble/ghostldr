@@ -283,6 +283,102 @@ int32_t os_race_write(int32_t user, const char *tid, const char *dir, const char
     return 0;
 }
 
+/* save_import_check, faked: what base has and src lacks (sce_sys at the top left out) is a removal, refused
+ * without prune; src's files (sce_sys left out) must not take more bytes than the save's ".room" file says
+ * (when it has one).  why: the text for the screen. */
+static void lost_walk(const char *base, const char *src, const char *rel, int *lost, char *first, size_t fsize)
+{
+    char p[1400], q[1400];
+    snprintf(p, sizeof(p), "%s%s", base, rel);
+    DIR *d = opendir(p);
+    for (struct dirent *e; d && (e = readdir(d));) {
+        if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, "..") || (!rel[0] && !strcmp(e->d_name, "sce_sys")))
+            continue;
+        char sub[1200];
+        struct stat st;
+        snprintf(sub, sizeof(sub), "%s/%s", rel, e->d_name);
+        snprintf(q, sizeof(q), "%s%s", src, sub);
+        if (stat(q, &st) != 0) {
+            if (!(*lost)++)
+                snprintf(first, fsize, "%s", sub + 1);
+            continue;
+        }
+        snprintf(q, sizeof(q), "%s%s", base, sub);
+        if (stat(q, &st) == 0 && S_ISDIR(st.st_mode))
+            lost_walk(base, src, sub, lost, first, fsize);
+    }
+    if (d)
+        closedir(d);
+}
+
+static long long bytes_walk(const char *dir, int top)
+{
+    long long n = 0;
+    DIR *d = opendir(dir);
+    for (struct dirent *e; d && (e = readdir(d));) {
+        if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, "..") || (top && !strcmp(e->d_name, "sce_sys")))
+            continue;
+        char p[1400];
+        struct stat st;
+        snprintf(p, sizeof(p), "%s/%s", dir, e->d_name);
+        if (stat(p, &st) == 0)
+            n += S_ISDIR(st.st_mode) ? bytes_walk(p, 0) : st.st_size;
+    }
+    if (d)
+        closedir(d);
+    return n;
+}
+
+int32_t os_import_check(int32_t user, const char *tid, const char *dir, const char *base, const char *src, int prune,
+                        char *why, size_t size)
+{
+    char b[1200], sv[1200], first[600] = "", line[1400];
+    int lost = 0;
+    struct stat st;
+    snprintf(b, sizeof(b), "%s%s", g_root, base);
+    snprintf(sv, sizeof(sv), "%s%s", g_root, src);
+    if (stat(b, &st) != 0) {
+        snprintf(why, size, "Can't import: ghostldr can't read %.9s's save as it was.\nNothing was changed.", tid);
+        return (int32_t)0x80020002;
+    }
+    lost_walk(b, sv, "", &lost, first, sizeof(first));
+    snprintf(line, sizeof(line), "import_check %08x %s/%s <- %s: %d to remove (first %s)", (uint32_t)user, tid, dir,
+             src, lost, lost ? first : "-");
+    os_log(line);
+    if (lost && !prune) {
+        snprintf(why, size, "Can't import: %.9s's save has %d file(s) the imported save doesn't\n(first: %.60s), and "
+                 "without the game's keystone ghostldr can't remove them.\nNothing was changed.", tid, lost, first);
+        return (int32_t)0x80020001;
+    }
+    snprintf(line, sizeof(line), "%s/saves/%08x/%.9s/%s/.room", g_root, (uint32_t)user, tid, dir);
+    FILE *f = fopen(line, "r");
+    long long room = -1;
+    if (f) {
+        if (fscanf(f, "%lld", &room) != 1)
+            room = -1;
+        fclose(f);
+    }
+    long long need = bytes_walk(sv, 1);
+    if (room >= 0 && need > room) {
+        snprintf(why, size, "Can't import: the files don't fit in %.9s's save.\nThey need %lld bytes; its files have "
+                 "room for %lld.\nNothing was changed.", tid, need, room);
+        return (int32_t)0x8002001C;
+    }
+    return 0;
+}
+
+/* save_tree_copy: dst a copy of src; keep_sys: dst's sce_sys stays, src's left out */
+int32_t os_tree_copy(const char *src, const char *dst, int keep_sys)
+{
+    if (keep_sys)
+        sh("cd '%s%s' && find . -mindepth 1 -maxdepth 1 ! -name sce_sys -exec rm -rf {} + && cd '%s%s' && "
+           "tar cf - --exclude ./sce_sys . | (cd '%s%s' && tar xf -)", g_root, dst, g_root, src, g_root, dst);
+    else
+        sh("chmod -R u+w '%s%s' 2>/dev/null; rm -rf '%s%s' && mkdir -p '%s%s' && cp -R '%s%s/' '%s%s/' && "
+           "chmod -R u+w '%s%s'", g_root, dst, g_root, dst, g_root, dst, g_root, src, g_root, dst, g_root, dst);
+    return 0;
+}
+
 static uint64_t digest_walk(const char *dir, uint64_t h)
 {
     struct dirent **list;

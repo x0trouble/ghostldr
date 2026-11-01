@@ -1050,6 +1050,7 @@ static struct {
     long failed_at;
     s32 err;
     u64 digest; /* rw: the copy's files when last made or committed */
+    u64 had;    /* rw: the blocks the save's files took when the copy was made (<host>.base: the save as it is) */
 } g_c[COPIES];
 
 static struct {
@@ -1175,7 +1176,14 @@ static int make_copy(const struct where *w, int c, bool rw, const char *fp)
     s32 rc = rw ? (fpc[0] ? save_fp_copy(w->user, w->tid, w->dir, fpc, host)
                               : save_race_rw_copy(w->user, w->tid, w->dir, host))
                 : save_race_copy(w->user, w->tid, w->dir, host);
-    u64 digest = rc == 0 && rw ? save_tree_digest(host) : 0;
+    u64 digest = rc == 0 && rw ? save_tree_digest(host) : 0, had = 0;
+    if (rc == 0 && rw) { /* the save as it is, beside the copy: what a commit is checked against, and its undo */
+        char base[112];
+        fmt(base, sizeof(base), "%s.base", host);
+        if (save_tree_copy(host, base, false) != 0)
+            logf("ftp: saves: %s: the save as it is could not be kept: its changes will be refused", base);
+        had = save_tree_blocks(base);
+    }
     logf("ftp: saves: %s/%s of user %08x: %s copy in %s -> %x", w->tid, w->dir, (u32)w->user,
          rw ? "a writable" : "a read-only", host, (u32)rc);
     lock();
@@ -1184,7 +1192,7 @@ static int make_copy(const struct where *w, int c, bool rw, const char *fp)
         g_c[c].err = rc == (s32)0x809F000C ? -FV_EBUSY : rc == (s32)0x809F0008 ? -FV_ENOENT : -FV_EACCES;
         return g_c[c].err;
     }
-    g_c[c].state = C_READY, g_c[c].digest = digest, g_c[c].refs = 1;
+    g_c[c].state = C_READY, g_c[c].digest = digest, g_c[c].had = had, g_c[c].refs = 1;
     return MOUNTS + c;
 }
 
@@ -1299,35 +1307,72 @@ static void commit(int c)
     w.user = g_c[c].user;
     memcpy(w.tid, g_c[c].tid, 10);
     strlcpy(w.dir, g_c[c].dir, sizeof(w.dir));
-    char host[96], backup[112], fpc[65];
+    char host[96], backup[112], base[112], fpc[65];
     strlcpy(host, g_c[c].host, sizeof(host));
     const char *fp = fp_of(w.tid);
     strlcpy(fpc, fp ? fp : "", sizeof(fpc));
-    u64 was = g_c[c].digest;
+    u64 was = g_c[c].digest, had = g_c[c].had;
     g_c[c].state = C_MAKING, g_c[c].changed = 0;
     unlock();
     u64 now = save_tree_digest(host);
     s32 rc = 0;
+    bool refused = false, lost = false;
     struct save_race_result *r = page_alloc(sizeof(*r));
-    if (now != was && r) {
+    struct save_import_check *ck = page_alloc(sizeof(*ck));
+    fmt(base, sizeof(base), "%s.base", host);
+    /* first whether the write can do it: remove what the copy lacks (only with the keystone) and fit in the save's
+     * fixed size; if not, nothing is asked of the save and the copy goes back to the save as it is */
+    if (now != was && r && ck &&
+        (rc = save_import_check(w.user, w.tid, w.dir, base, host, had, fpc[0] != 0, ck)) != 0) {
+        refused = true;
+        s32 back = save_tree_copy(base, host, false);
+        lost = back != 0;
+        now = save_tree_digest(host);
+        logf("ftp: saves: %s/%s of user %08x: the changes were not written (%x); the copy back as the save is -> %x: "
+             "%s", w.tid, w.dir, (u32)w.user, (u32)rc, (u32)back, ck->why);
+        if (g_title_runs)
+            ov_banner(ck->why, 60);
+    } else if (now != was && r && ck) {
         fmt(backup, sizeof(backup), "%s.before", host);
         rc = save_race_write(w.user, w.tid, w.dir, host, fpc[0] ? fpc : NULL, backup, r);
+        if (rc == 0)
+            save_tree_copy(host, base, true); /* the save as it is now (its sce_sys the save's) */
         logf("ftp: saves: %s/%s of user %08x: the changes -> %x (%u written, %u made, %u deleted)%s%s", w.tid, w.dir,
              (u32)w.user, (u32)rc, r->written, r->created, r->deleted,
              r->needs_exit ? ": written into the save; CLOSE SWRR to keep them (the system commits the save when "
                              "SWRR closes)" : "", rc && r->why[0] ? r->why : "");
-    } else if (!r) {
+    } else if (!r || !ck) {
         rc = -1;
     }
     bool tell = rc == 0 && r && r->needs_exit && now != was;
     if (r)
         page_free(r, sizeof(*r));
+    if (ck)
+        page_free(ck, sizeof(*ck));
     if (tell && g_title_runs) /* the game's frames carry it; the selector's log says it */
         ov_banner("Save changed over FTP. To keep it, close SWRR from the PS button menu.", 0);
     lock();
     g_c[c].state = C_READY;
-    if (rc == 0)
+    if (rc == 0 || refused)
         g_c[c].digest = now;
+    if (refused && lost) /* the copy could not be put back, so it is gone (save_tree_copy): made again when needed */
+        g_c[c].state = C_FREE;
+}
+
+/* Without the game's keystone nothing can be removed from its save (save_race_write keeps what the copy lacks):
+ * removing or renaming away a path the save has is refused at once.  (lock held) */
+static int keeps_path(int k, const struct where *w)
+{
+    if (k < MOUNTS || fp_of(w->tid))
+        return 0;
+    char p[PATH_MAX_];
+    u8 st[0x78];
+    fmt(p, sizeof(p), "%s.base%s", g_c[k - MOUNTS].host, w->rest);
+    if (K.stat(p, st) != 0)
+        return 0; /* made since the copy: not in the save */
+    logf("ftp: saves: %s/%s%s is in the save, and without the game's keystone nothing can be removed from it", w->tid,
+         w->dir, w->rest);
+    return -FV_EPERM;
 }
 
 static void fd_note(int fd, int k)
@@ -1535,8 +1580,10 @@ static int change(const char *path, int op)
     int rc = writable_where(path, &w);
     if (rc == 0) {
         int k = acquire(&w, true);
-        rc = k;
-        if (k >= 0) {
+        rc = k >= 0 && op < 2 ? keeps_path(k, &w) : k;
+        if (rc < 0 && k >= 0)
+            release(k);
+        if (rc >= 0) {
             char p[PATH_MAX_];
             real_path(p, sizeof(p), k, w.rest);
             long r = op == 0 ? R.rmdir(p) : op == 1 ? R.unlink(p) : R.mkdir(p, 0777);
@@ -1567,8 +1614,10 @@ HIDDEN int ftps_rename(const char *from, const char *to)
         rc = -FV_EXDEV;
     if (rc == 0) {
         int k = acquire(&a, true);
-        rc = k;
-        if (k >= 0) {
+        rc = k >= 0 ? keeps_path(k, &a) : k;
+        if (rc < 0 && k >= 0)
+            release(k);
+        if (rc >= 0) {
             char p[PATH_MAX_], q[PATH_MAX_];
             real_path(p, sizeof(p), k, a.rest);
             real_path(q, sizeof(q), k, b.rest);

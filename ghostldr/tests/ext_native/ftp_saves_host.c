@@ -25,6 +25,9 @@ s32 os_race_copy(s32 user, const char *tid, const char *dir, const char *fp, con
 s32 os_race_rw_copy(s32 user, const char *tid, const char *dir, const char *dst);
 s32 os_race_write(s32 user, const char *tid, const char *dir, const char *src, int prune);
 u64 os_digest(const char *dir);
+s32 os_import_check(s32 user, const char *tid, const char *dir, const char *base, const char *src, int prune,
+                    char *why, u64 size);
+s32 os_tree_copy(const char *src, const char *dst, int keep_sys);
 
 /* ftp_saves.c */
 bool ftps_owns(const char *path);
@@ -135,6 +138,14 @@ s32 save_race_write(s32 user, const char *tid, const char *dir, const char *src,
     return r->rc;
 }
 u64 save_tree_digest(const char *dir) { return os_digest(dir); }
+s32 save_import_check(s32 user, const char *tid, const char *dir, const char *base, const char *src, u64 had,
+                      bool can_remove, struct save_import_check *c)
+{
+    memset(c, 0, sizeof(*c));
+    return c->rc = os_import_check(user, tid, dir, base, src, can_remove, c->why, sizeof(c->why));
+}
+s32 save_tree_copy(const char *src, const char *dst, bool keep_sys) { return os_tree_copy(src, dst, keep_sys); }
+u64 save_tree_blocks(const char *dir) { return 1; }
 void ov_banner(const char *text, u32 seconds) { hlog("banner: %s", text); }
 
 /* hle_savedata.c's and approot.c's */

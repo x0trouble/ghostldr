@@ -46,7 +46,7 @@
 #include <unistd.h>
 
 int host_run(const char *tid, const char *dir, const char *src, const char *fp, const char *backup, int check);
-int host_fsvsh(const char *fp, int change);
+int host_fsvsh(const char *fp, int change, const char *import, const char *remove);
 int host_prescan(const char *saves, uint32_t user, uint32_t stop);
 int host_copy(const char *tid, const char *dir, const char *dst);
 
@@ -84,6 +84,37 @@ int os_put(const char *console_path, const void *data, uint64_t n)
         return -1;
     fwrite(data, 1, n, f);
     fclose(f);
+    return 0;
+}
+
+/* a save tool's "Copy save game to HDD" (Apollo's copy_directory): every file of the console folder src copied over
+ * the console folder dst, nothing removed */
+int os_copy_over(const char *src, const char *dst)
+{
+    char cmd[2600];
+    snprintf(cmd, sizeof(cmd), "cp -R '%s%s/.' '%s%s/'", g_root, src, g_root, dst);
+    return system(cmd);
+}
+
+/* a file or folder of the fake console removed (a tool deleting in its mount) */
+int os_remove(const char *console_path)
+{
+    char cmd[1300];
+    snprintf(cmd, sizeof(cmd), "rm -rf '%s%s'", g_root, console_path);
+    return system(cmd);
+}
+
+/* the save service's size and free blocks of the save (DirNameSearch's infos): FAKE_SPACE="blocks,free", "none"
+ * for no answer; 1024 blocks with 512 free otherwise */
+int os_space(uint64_t *blocks, uint64_t *free_blocks)
+{
+    const char *e = getenv("FAKE_SPACE");
+    unsigned long long b = 1024, f = 512;
+    if (e && strcmp(e, "none") == 0)
+        return -1;
+    if (e && sscanf(e, "%llu,%llu", &b, &f) != 2)
+        return -1;
+    *blocks = b, *free_blocks = f;
     return 0;
 }
 
@@ -640,7 +671,9 @@ int main(int argc, char **argv)
         host_fsvsh(strcmp(argv[6], "-") ? argv[6] : NULL,
                    strcmp(argv[8], "fsvsh-learn") == 0      ? 2
                    : strcmp(argv[8], "fsvsh-learn-ro") == 0 ? 3
-                                                             : strcmp(argv[8], "fsvsh") == 0);
+                   : strcmp(argv[8], "fsvsh-import") == 0   ? 4
+                                                             : strcmp(argv[8], "fsvsh") == 0,
+                   strcmp(argv[5], "-") ? argv[5] : NULL, strcmp(argv[7], "-") ? argv[7] : NULL);
     else
         host_run(argv[3], argv[4], argv[5], strcmp(argv[6], "-") ? argv[6] : NULL,
                  strcmp(argv[7], "-") ? argv[7] : NULL, check);

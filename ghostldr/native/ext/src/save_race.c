@@ -887,7 +887,7 @@ static bool tgt_walk(const char *mp, const char *rel, int depth)
 
 /* the files below the host folder src copied into the host folder dst, by path (sce_sys too, as far as the app
  * may read it: its keystone it may not); the number that could not be copied, sce_sys's left out */
-static u32 plain_copy(const char *src, const char *dst, const char *rel, int depth)
+static u32 plain_copy(const char *src, const char *dst, const char *rel, int depth, bool sys)
 {
     char path[512], out[512];
     fmt(path, sizeof(path), rel[0] ? "%s/%s" : "%s", src, rel);
@@ -906,8 +906,10 @@ static u32 plain_copy(const char *src, const char *dst, const char *rel, int dep
     for (u32 i = 0; i < l->n; i++) {
         char sub[200];
         join(sub, sizeof(sub), rel, l->name[i]);
+        if (!sys && !rel[0] && strcmp(l->name[i], "sce_sys") == 0)
+            continue;
         if (l->type[i] == 4) {
-            bad += depth > 0 ? plain_copy(src, dst, sub, depth - 1) : 1;
+            bad += depth > 0 ? plain_copy(src, dst, sub, depth - 1, true) : 1;
             continue;
         }
         fmt(path, sizeof(path), "%s/%s", src, sub);
@@ -1270,7 +1272,7 @@ s32 save_race_write(s32 user, const char *tid, const char *dir, const char *src_
         if (frc == 0) {
             u32 before = G_w.n;
             bool whole = tgt_walk(mp, "", 6);
-            u32 bad = backup && backup[0] ? (mkdirs(backup), plain_copy(mp, backup, "", 6)) : 0;
+            u32 bad = backup && backup[0] ? (mkdirs(backup), plain_copy(mp, backup, "", 6, true)) : 0;
             s32 urc = R.umount(mp);
             logf("save_race: write: %s:%s read-only with its fingerprint: %u entries only the save has%s; %s; unmount "
                  "-> %x", t, d, G_w.n - before, whole ? "" : " (listing cut short)",
@@ -1517,7 +1519,7 @@ s32 save_fp_copy(s32 user, const char *tid, const char *dir, const char *fp, con
     if (rc == 0) {
         remove_tree(dst, 8);
         mkdirs(dst);
-        u32 bad = plain_copy(mp, dst, "", 6);
+        u32 bad = plain_copy(mp, dst, "", 6, true);
         if (bad)
             rc = E_ACCES;
         R.umount(mp);
@@ -1582,6 +1584,218 @@ u64 save_tree_digest(const char *dir)
     u64 h = (!g_buf && !(g_buf = page_alloc(BUF))) ? 0 : digest_tree(dir, "", 8, 0xcbf29ce484222325ull);
     spin_unlock(&g_lock);
     return h;
+}
+
+/* ---- before a writable copy goes into its save: what the write would have to remove, and whether it fits ----
+ * (save tools and FTP /saves; savedata_hooks.h) */
+
+#define BLOCK 32768u
+#define E_NOSPC_ ((s32)0x8002001C)
+#define FS_SHARE 48 /* blocks of a save the file system keeps: 45-47 measured on a PS4 (hle_savedata.c) */
+
+static u64 file_blocks(u64 size) { return size ? (size + BLOCK - 1) / BLOCK : 1; }
+
+/* blocks of the files and folders below dir/rel (sce_sys at the top left out unless sys) */
+static u64 tree_blocks(const char *dir, const char *rel, int depth, bool sys)
+{
+    char path[512];
+    fmt(path, sizeof(path), rel[0] ? "%s/%s" : "%s", dir, rel);
+    int fd = R.open(path, O_RDONLY | O_DIRECTORY, 0);
+    if (fd < 0)
+        return 0;
+    struct rw_list *l = page_alloc(sizeof(*l));
+    u64 n = 0;
+    if (l) {
+        list_dir(fd, l);
+        for (u32 i = 0; i < l->n; i++) {
+            if (!sys && !rel[0] && strcmp(l->name[i], "sce_sys") == 0)
+                continue;
+            char sub[200];
+            join(sub, sizeof(sub), rel, l->name[i]);
+            if (l->type[i] == 4) {
+                n += 1 + (depth > 0 ? tree_blocks(dir, sub, depth - 1, true) : 0);
+                continue;
+            }
+            u8 st[0x78];
+            fmt(path, sizeof(path), "%s/%s", dir, sub);
+            n += file_blocks(R.stat(path, st) == 0 ? *(u64 *)(st + 0x48) : 0);
+        }
+        page_free(l, sizeof(*l));
+    }
+    R.close(fd);
+    return n;
+}
+
+u64 save_tree_blocks(const char *dir)
+{
+    if (!dir || !rw_ready())
+        return 0;
+    spin_lock(&g_lock);
+    u64 n = tree_blocks(dir, "", 8, false);
+    spin_unlock(&g_lock);
+    return n;
+}
+
+/* the top entries of dir but sce_sys removed */
+static void empty_but_sys(const char *dir)
+{
+    int fd = R.open(dir, O_RDONLY | O_DIRECTORY, 0);
+    struct rw_list *l = fd >= 0 ? page_alloc(sizeof(*l)) : NULL;
+    if (l)
+        list_dir(fd, l);
+    if (fd >= 0)
+        R.close(fd);
+    for (u32 i = 0; l && i < l->n; i++)
+        if (strcmp(l->name[i], "sce_sys") != 0) {
+            char sub[512];
+            fmt(sub, sizeof(sub), "%s/%s", dir, l->name[i]);
+            remove_tree(sub, 8);
+        }
+    if (l)
+        page_free(l, sizeof(*l));
+}
+
+s32 save_tree_copy(const char *src, const char *dst, bool keep_sys)
+{
+    if (!src || !dst || !rw_ready())
+        return E_INVAL;
+    spin_lock(&g_lock);
+    s32 rc = (!g_buf && !(g_buf = page_alloc(BUF))) ? E_NOMEM : 0;
+    if (rc == 0) {
+        if (keep_sys)
+            empty_but_sys(dst);
+        else
+            remove_tree(dst, 8);
+        mkdirs(dst);
+        rc = plain_copy(src, dst, "", 6, !keep_sys) ? E_ACCES : 0;
+        if (rc != 0 && !keep_sys)
+            remove_tree(dst, 8); /* no partial copy that a check would take for the whole save */
+    }
+    spin_unlock(&g_lock);
+    return rc;
+}
+
+/* an integer key of a param.sfo (SAVEDATA_BLOCKS: 8 bytes), or 0 */
+static u64 sfo_int(const u8 *sfo, s64 n, const char *key)
+{
+    if (n < 0x14 || memcmp(sfo, "\0PSF", 4) != 0)
+        return 0;
+    u32 koff = *(const u32 *)(sfo + 8), doff = *(const u32 *)(sfo + 12), cnt = *(const u32 *)(sfo + 16);
+    size_t klen = strlen(key) + 1;
+    for (u32 i = 0; i < cnt && 0x14 + (u64)(i + 1) * 16 <= (u64)n; i++) {
+        const u8 *e = sfo + 0x14 + i * 16;
+        u64 k = (u64)koff + *(const u16 *)e, len = *(const u32 *)(e + 4), d = (u64)doff + *(const u32 *)(e + 12);
+        if (k + klen > (u64)n || memcmp(sfo + k, key, klen) != 0 || (len != 4 && len != 8) || d + len > (u64)n)
+            continue;
+        return len == 8 ? *(const u64 *)(sfo + d) : *(const u32 *)(sfo + d);
+    }
+    return 0;
+}
+
+/* "12 KiB", "3.4 MiB" */
+static void size_text(char *out, size_t size, u64 blocks)
+{
+    u64 kib = blocks * (BLOCK / 1024);
+    if (kib < 1024)
+        fmt(out, size, "%lu KiB", kib);
+    else
+        fmt(out, size, "%lu.%lu MiB", kib / 1024, (kib % 1024) * 10 / 1024);
+}
+
+s32 save_import_check(s32 user, const char *tid, const char *dir, const char *base, const char *src, u64 had,
+                      bool can_remove, struct save_import_check *c)
+{
+    static struct save_import_check scratch;
+    if (!c)
+        c = &scratch;
+    memset(c, 0, sizeof(*c));
+    if (!tid_ok(tid) || !dir_ok(dir) || !base || !src || !rw_ready()) {
+        fmt(c->why, sizeof(c->why), "Can't import: ghostldr can't check the save.\nNothing was changed.");
+        return c->rc = E_INVAL;
+    }
+    char t[16];
+    memset(t, 0, sizeof(t));
+    strlcpy(t, tid, 10);
+    spin_lock(&g_lock);
+    struct rw_src *was = page_alloc(sizeof(*was) * SRC_MAX);
+    u32 n = 0;
+    s32 rc = !was ? E_NOMEM : src_walk(base, "", 8, was, &n);
+    u64 lost = 0, files = 0, dirs = 0, base_blocks = 0;
+    const char *first_file = NULL, *first_dir = NULL;
+    for (u32 i = 0; rc == 0 && i < n; i++) {
+        u64 b = was[i].dir ? 1 : file_blocks(was[i].size);
+        base_blocks += b;
+        char path[512];
+        u8 st[0x78];
+        fmt(path, sizeof(path), "%s/%s", src, was[i].rel);
+        if (R.stat(path, st) == 0)
+            continue;
+        lost += b;
+        if (was[i].dir)
+            dirs++, first_dir = first_dir ? first_dir : was[i].rel;
+        else
+            files++, first_file = first_file ? first_file : was[i].rel;
+    }
+    if (rc == 0) {
+        c->had = had ? had : base_blocks;
+        c->need = tree_blocks(src, "", 8, false) + (can_remove ? 0 : lost);
+        c->removed = files ? (u32)files : (u32)dirs;
+        c->removed_dirs = !files && dirs;
+        strlcpy(c->first, first_file ? first_file : first_dir ? first_dir : "", sizeof(c->first));
+    }
+    /* the room: the save service's free blocks, else SAVEDATA_BLOCKS less the file system's share and sce_sys */
+    u8 *sfo = rc == 0 ? page_alloc(0x4000) : NULL;
+    if (rc == 0 && savedata_foreign_space(user, t, dir, &c->blocks, &c->free) == 0 && c->blocks)
+        c->room_from = 1;
+    else if (rc == 0 && sfo) {
+        char path[512];
+        fmt(path, sizeof(path), "%s/sce_sys/param.sfo", base);
+        int fd = R.open(path, O_RDONLY, 0);
+        s64 got = fd >= 0 ? R.read(fd, sfo, 0x4000) : -1;
+        if (fd >= 0)
+            R.close(fd);
+        u64 sb = sfo_int(sfo, got, "SAVEDATA_BLOCKS");
+        if (sb) {
+            u8 st[0x78];
+            fmt(path, sizeof(path), "%s/sce_sys/keystone", base);
+            fmt(path + 256, 256, "%s/sce_sys", base);
+            u64 sys = 1 + tree_blocks(path + 256, "", 4, true) + (R.stat(path, st) != 0); /* the keystone no app reads */
+            u64 used = FS_SHARE + sys + base_blocks;
+            c->blocks = sb, c->free = sb > used ? sb - used : 0, c->room_from = 2;
+        }
+    }
+    if (sfo)
+        page_free(sfo, 0x4000);
+    if (was)
+        page_free(was, sizeof(*was) * SRC_MAX);
+    spin_unlock(&g_lock);
+    char need[24], room[24], size[24];
+    if (rc != 0) {
+        fmt(c->why, sizeof(c->why), "Can't import: ghostldr can't read %s's save as it was (error %x).\n"
+            "Nothing was changed.", t, (u32)rc);
+    } else if (c->removed && !can_remove) {
+        rc = E_PERM;
+        fmt(c->why, sizeof(c->why), "Can't import: %s's save has %u %s the imported save doesn't\n(first: %.60s), "
+            "and without the game's keystone ghostldr can't remove them.\nNothing was changed.", t, c->removed,
+            c->removed_dirs ? "folder(s)" : "file(s)", c->first);
+    } else if (c->room_from && c->need > c->had + c->free) {
+        rc = E_NOSPC_;
+        size_text(need, sizeof(need), c->need), size_text(room, sizeof(room), c->had + c->free);
+        size_text(size, sizeof(size), c->blocks);
+        fmt(c->why, sizeof(c->why), "Can't import: the files don't fit in %s's save.\nThey need %s; its files have "
+            "room for %s (a %s save%s), and a save can't grow here.\nNothing was changed.", t, need, room, size,
+            c->room_from == 2 ? ", estimated" : "");
+    } else if (!c->room_from && c->need > c->had) {
+        rc = E_NOSPC_;
+        size_text(need, sizeof(need), c->need - c->had);
+        fmt(c->why, sizeof(c->why), "Can't import: the files take %s more than %s's save holds now,\nand ghostldr "
+            "can't tell how much room it has.\nNothing was changed.", need, t);
+    }
+    logf("save_race: import check %s:%s: %u %s to remove%s (first %s), %lu blocks needed, %lu had, %lu free of %lu "
+         "(%s) -> %x", t, dir, c->removed, c->removed_dirs ? "folders" : "files", can_remove ? " (allowed)" : "",
+         c->first[0] ? c->first : "-", c->need, c->had, c->free, c->blocks,
+         c->room_from == 1 ? "the save service" : c->room_from == 2 ? "estimated from param.sfo" : "unknown", (u32)rc);
+    return c->rc = rc;
 }
 
 /* for elfldr payloads (ghostldr's resign tool): imports of these names bind here.  src is a path as the
