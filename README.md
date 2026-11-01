@@ -1,6 +1,6 @@
 # ghostldr
 
-ghostldr runs PS4 game dumps and OpenOrbis homebrew inside *Star Wars Racer Revenge* (SWRR) on a stock PS5. It uses [Luac0re](https://github.com/Gezine/Luac0re)'s userland exploit: no kernel exploit, no jailbreak.
+ghostldr runs PS4 game dumps and OpenOrbis homebrew inside *Star Wars Racer Revenge* (SWRR) on a stock PS4/PS5. It uses [Luac0re](https://github.com/Gezine/Luac0re)'s userland exploit: no kernel exploit, no jailbreak.
 
 [![Ghost of Tsushima running inside SWRR on a stock PS5 (click for the full video)](docs/media/ghostldr-demo-preview.gif)](docs/media/ghostldr-demo.mp4?raw=true)
 
