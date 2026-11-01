@@ -17,8 +17,8 @@ copy of it go (docs/developers.md#making-a-release):
     ghostldr/ghostldr-ext.bin    from build/ghostldr
 
 and its sce_sys/param.sfo is made anyone's: ACCOUNT_ID, the PARAMS user ID,
-console PSID HMAC and times zeroed (Apollo and Save Wizard write the
-importer's), SAVEDATA_BLOCKS grown to hold the files, and its name and
+console PSID HMAC and times zeroed (Apollo and save resigning tools write
+the importer's), SAVEDATA_BLOCKS grown to hold the files, and its name and
 subtitle say what it is.  For the other region
 than SAVE's, TITLE_ID, SAVEDATA_DIRECTORY, PARAMS' title IDs, the
 disc-swap config and the keystone change too (the keystone is that game's:
@@ -31,7 +31,7 @@ in it, laid out for the root of a USB drive, and a README.txt:
 
     ghostldr-<version>-save-US-CUSA03474.zip
         PS4/APOLLO/00000000_CUSA03474_SLUS-20268/...          decrypted, for Apollo
-        PS4/SAVEDATA/0000000000000000/CUSA03474/SLUS-20268    encrypted, for Save Wizard
+        PS4/SAVEDATA/0000000000000000/CUSA03474/SLUS-20268    encrypted, for a resigning tool
     ghostldr-<version>-save-EU-CUSA03492.zip                  the same for SLES-50366
 
 The encrypted save is made on a console from the decrypted one
@@ -219,8 +219,8 @@ def readme(version: str, region: str, encrypted: bool) -> bytes:
             "      decrypted: Apollo Save Tool, Copy save game to HDD (a jailbroken PS4)\n")
     if encrypted:
         text += (f"  PS4/SAVEDATA/{NO_ONE}/{r['title']}/{r['dir']} and {r['dir']}.bin\n"
-                 "      encrypted: resign it to your account with Save Wizard, then import it\n"
-                 "      from PS4/SAVEDATA/<your account ID, 16 hex>/" + r['title'] + "/\n"
+                 "      encrypted: resign it to your account with a save resigning tool, then\n"
+                 "      import it from PS4/SAVEDATA/<your account ID, 16 hex>/" + r['title'] + "/\n"
                  "      (PS5: Saved Data (PS4) > Copy or Delete from USB Drive)\n")
     text += f"\nThe guide: https://github.com/asylumexp/ghostldr/blob/{version}/docs/using-the-release.md#a-the-autoloader-save\n"
     return text.encode()

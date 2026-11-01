@@ -4,7 +4,7 @@ ghostldr runs PS4 game dumps and OpenOrbis homebrew inside *Star Wars Racer Reve
 
 [![Ghost of Tsushima running inside SWRR on a stock PS5 (click for the full video)](docs/media/ghostldr-demo-preview.gif)](docs/media/ghostldr-demo.mp4?raw=true)
 
-[Full demo, 3½ minutes (MP4)](docs/media/ghostldr-demo.mp4?raw=true): from Luac0re's loader to Ghost's gameplay.
+[Full demo, 3 minutes (MP4)](docs/media/ghostldr-demo.mp4?raw=true): from starting SWRR, through the autoloader and the game selector, to Ghost's gameplay.
 
 ## What you need
 
@@ -27,7 +27,7 @@ No Python and no program on a computer.
 - **An ELF loader** for homebrew developers: send a payload, get its output back.
 - **Every failure is explained on the TV**, and each boot's log is written to the USB drive.
 
-Other games boot as far as their imports and memory allow. [docs/compatibility.md](docs/compatibility.md) has the details and the known limits.
+Game compatibility is listed in the [issues tab](https://github.com/asylumexp/ghostldr/issues?q=is%3Aissue%20in%3Atitle%20Compatibility): one report per game. Other games boot as far as their imports and memory allow; [docs/compatibility.md](docs/compatibility.md) has the known limits.
 
 ## How to run it
 
@@ -48,7 +48,9 @@ Download the files from the [latest release](https://github.com/asylumexp/ghostl
 ## Documentation
 
 - [Using the release](docs/using-the-release.md): download to gameplay, step by step.
-- [Compatibility](docs/compatibility.md): what runs, PS4 and Jak X, Apollo, and the known limits.
+- [Game compatibility](https://github.com/asylumexp/ghostldr/issues?q=is%3Aissue%20in%3Atitle%20Compatibility): the reports in the issues tab.
+- [Compatibility](docs/compatibility.md): consoles, PS4 and Jak X, homebrew, Apollo, and the known limits.
+- [Apollo Save Tool](docs/apollo.md): what it can and can't do under ghostldr.
 - [Developers](docs/developers.md): the ELF loader, building payloads, title profiles, the tools on a computer, making a release.
 
 ## Building from source

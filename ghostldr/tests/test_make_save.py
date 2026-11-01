@@ -207,7 +207,7 @@ class MakeSave(unittest.TestCase):
         eu = out["ghostldr-v1.0.0-save-EU-CUSA03492.zip"]
         self.assertIn("PS4/APOLLO/00000000_CUSA03492_SLES-50366/ghostldr/ghostldr-ext.bin", eu)
         self.assertEqual(eu["PS4/SAVEDATA/0000000000000000/CUSA03492/SLES-50366.bin"][:8], b"pfsSKKey")
-        self.assertIn(b"Save Wizard", eu["README.txt"])
+        self.assertIn(b"save resigning tool", eu["README.txt"])
         self.assertIn(b"(CUSA03492)", eu["README.txt"])
         us = out["ghostldr-v1.0.0-save-US-CUSA03474.zip"]
         self.assertIn("PS4/SAVEDATA/0000000000000000/CUSA03474/SLUS-20268", us)
@@ -216,7 +216,7 @@ class MakeSave(unittest.TestCase):
     def test_without_an_encrypted_save_the_decrypted_one_alone(self) -> None:
         eu = self.zips(regions=("eu",))["ghostldr-v1.0.0-save-EU-CUSA03492.zip"]
         self.assertFalse([n for n in eu if n.startswith("PS4/SAVEDATA/")])
-        self.assertNotIn(b"Save Wizard", eu["README.txt"])
+        self.assertNotIn(b"encrypted:", eu["README.txt"])
 
     def test_an_encrypted_save_must_be_no_ones_and_this_regions(self) -> None:
         for bad in (self.encrypted("eu", account="1122334455667788"), self.encrypted("us")):

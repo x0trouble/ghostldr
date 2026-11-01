@@ -8,7 +8,7 @@ This page takes a ghostldr release from download to gameplay on a stock PS5. You
 - **Your own dump of the game:** the folder with `eboot.bin` in it, with `sce_module/`, `sce_sys/` and the game's data, decrypted, with its update merged in. A fake-signed PS4 PKG works too: the release's PKG tool turns it into that folder.
 - **An exFAT USB drive** with room for the games (recommended). Without one, games go into SWRR's saved data over the network.
 - **A way to start ghostldr**, one of:
-  - the autoloader save: Save Wizard, or a jailbroken PS4 with Apollo Save Tool, to get it onto the console once;
+  - the autoloader save: a save resigning tool, or a jailbroken PS4 with Apollo Save Tool, to get it onto the console once;
   - something that sends a file over the network: `nc` on macOS or Linux, or a payload-sender app on a phone or on Windows.
 
 Both regions of SWRR work the same way, but each keeps its own saved data. Play a game from the same region every time.
@@ -23,7 +23,7 @@ Download them from the [release page](https://github.com/asylumexp/ghostldr/rele
 | `ghostldr-ext.bin` | ghostldr itself, with the game selector. `ghostldr.lua` keeps it on the PS5 after the first time. |
 | `ghostldr-elfldr.bin` | The [ELF loader](developers.md#the-elf-loader) on its own, for payloads without games (PS5). |
 | `SHA256SUMS.txt` | The files' checksums. |
-| `ghostldr-<version>-save-US-CUSA03474.zip`, `ghostldr-<version>-save-EU-CUSA03492.zip` | The [autoloader save](#a-the-autoloader-save), one per SWRR region. Each holds it twice: decrypted, for Apollo Save Tool, and encrypted, for Save Wizard. |
+| `ghostldr-<version>-save-US-CUSA03474.zip`, `ghostldr-<version>-save-EU-CUSA03492.zip` | The [autoloader save](#a-the-autoloader-save), one per SWRR region. Each holds it twice: decrypted, for Apollo Save Tool, and encrypted, for a save resigning tool. |
 | `pkgextract-cli-windows-x64.exe`, `pkgextract-cli-macos`, `pkgextract-cli-linux-x64`, `pkgextract-cli-linux-arm64` | A tool for your computer that extracts a fake-signed PS4 PKG into a game folder for the USB drive. One file, nothing to install. The macOS one runs on Intel and Apple silicon alike. |
 
 Use one release's files together: `ghostldr.lua` takes only its own release's `ghostldr-ext.bin`. To check the downloads, run `shasum -a 256 --ignore-missing -c SHA256SUMS.txt` in their folder.
@@ -65,7 +65,7 @@ Unzip your region's `ghostldr-<version>-save-...zip` onto the root of a USB driv
 - **A jailbroken PS4, with Apollo Save Tool:**
   1. In Apollo, delete SWRR's save: **HDD Saves**, the SWRR save (`SLUS-20268` or `SLES-50366`), **Delete**. Use Apollo, not the PS4's Settings: there all of SWRR's saved data is one item, installed games included.
   2. **USB Saves**, the ghostldr save, **Copy save game to HDD**. Apollo writes your account into it as it copies.
-- **A PS5, with Save Wizard:**
+- **A PS5, with a save resigning tool:**
   1. Resign the encrypted save in `PS4/SAVEDATA/0000000000000000/<title ID>/` to your PSN profile.
   2. Put it on the drive as `PS4/SAVEDATA/<your account ID, 16 hex digits>/<title ID>/`.
   3. Import it: **Settings → Saved Data and Game/App Settings → Saved Data (PS4) → Copy or Delete from USB Drive**.

@@ -101,7 +101,7 @@ class ReleaseGuide(unittest.TestCase):
 
     def test_both_ways_to_start(self) -> None:
         text = (ROOT / "docs/using-the-release.md").read_text(encoding="utf-8")
-        for words in ("HALL OF FAME", "L1 + R1", "Save Wizard", "Apollo", "nc CONSOLE 9026 < ghostldr.lua",
+        for words in ("HALL OF FAME", "L1 + R1", "save resigning tool", "Apollo", "nc CONSOLE 9026 < ghostldr.lua",
                       "nc CONSOLE 9021 < ghostldr-ext.bin"):
             self.assertIn(words, text)
 

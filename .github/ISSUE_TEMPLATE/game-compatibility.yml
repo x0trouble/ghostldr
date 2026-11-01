@@ -59,6 +59,14 @@ body:
       required: true
 
   - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots (optional)
+      description: |
+        Drag in screenshots or a short video: the last screen it reached, a message on the TV, or a graphics problem.
+        Take them with the Create button and copy them to a USB drive from the Media Gallery, or photograph the TV.
+
+  - type: textarea
     id: save
     attributes:
       label: Save data (optional)

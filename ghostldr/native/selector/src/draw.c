@@ -343,8 +343,10 @@ void draw_rring(surface *s, int x, int y, int w, int h, int r, int t, u32 argb)
         u32 *p = row(s, yy);
         if (yy >= y + e && yy < y + h - e) { /* beside the straight sides: t pixels at each end */
             for (int xx = x0; xx < x1; xx++) {
-                if (xx == x + t && x + w - t > xx)
-                    xx = x + w - t;
+                if (xx >= x + t && xx < x + w - t) { /* skip the inside (also when its left edge is off screen) */
+                    xx = x + w - t - 1;
+                    continue;
+                }
                 p[xx] = over(p[xx], argb, a);
             }
             continue;

@@ -62,6 +62,8 @@ Tested: the OpenOrbis samples (hello world, fonts, input, audio, exceptions, lib
 
 Apollo Save Tool for PS4 runs under ghostldr on a stock PS5, on the saves of the console's signed-in users.
 
+[apollo.md](apollo.md) lists what it can and can't do.
+
 - **Whose saves:** the selector asks which user's saves to open, then looks for that user's saves (the first time can take two minutes; hold Circle to cancel).
 - **What works:** Apply cheats, Import decrypted save files, Copy save game to HDD, and resign, into a save the game already has. An import copies its files over the save and deletes nothing.
 - **Close SWRR afterwards.** A box at the bottom of the screen says so: the system commits the save when SWRR closes. Apollo's own "success" message isn't the end.

@@ -28,7 +28,7 @@ With --save ZIP (tools/make_save.py's zip for this region) the copy
 gets that save's files instead of the console's Luac0re save's, and its size
 (SAVEDATA_BLOCKS): the autoloader's encrypted save (docs/developers.md#making-a-release).
 --anyone makes it no one's: ACCOUNT_ID 0, and the PARAMS user ID and the
-console's PSID HMAC zeroed, for Save Wizard to resign:
+console's PSID HMAC zeroed, for a save resigning tool:
 
     python3 ghostldr/host/resign_save.py lua copy --anyone --save build/saves/ghostldr-v1.0.0-save-EU-CUSA03492.zip
     python3 ghostldr/host/resign_save.py usb --anyone --name eu      # build/resigned/eu-CUSA03492-SLES-50366.zip
@@ -247,7 +247,7 @@ def main() -> int:
     ap.add_argument("mode", nargs="?", default="show", choices=["copy", "patch", "show", "delete"])
     ap.add_argument("--account", help="PSN account ID (decimal, or hex with 0x)")
     ap.add_argument("--anyone", action="store_true",
-                    help="no account: ACCOUNT_ID 0, no PARAMS user ID or console PSID HMAC (for Save Wizard)")
+                    help="no account: ACCOUNT_ID 0, no PARAMS user ID or console PSID HMAC (for a resigning tool)")
     ap.add_argument("--save", type=Path, help="lua copy: the files of this tools/make_save.py zip, and its size")
     ap.add_argument("--uid", help="local user id of the PS5 user running SWRR (8 hex; default: found over FTP)")
     ap.add_argument("--name", default="resigned", help="output folder name under build/resigned/")

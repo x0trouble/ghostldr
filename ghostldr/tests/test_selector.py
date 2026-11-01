@@ -334,16 +334,19 @@ class Selector(unittest.TestCase):
 
     # ---- the UI on this computer ----
     def test_preview_scenes(self) -> None:
-        for scene in ("tour", "info", "launch"):
+        for scene in ("tour", "info", "launch", "slide"):
             p = subprocess.run([str(self.preview), "--font", str(FONT), "--out", str(self.shots), "--scene", scene,
                                 "--prefix", "preview-", "--user", "Tester", "--verify"], capture_output=True, text=True)
             self.assertEqual(p.returncode, 0, p.stderr)
             self.assertRegex(p.stderr, r"verify: 0 of \d+ partial frames differ")
+            # mid-move the tile left of the focus is partly off screen: its fading focus ring
+            # once filled all of it white (draw_rring's skip of the inside missed)
+            self.assertIn("verify: focus ring off screen: 0 pixels drawn inside or beyond the edges", p.stderr)
             if scene == "launch":
                 self.assertIn("boot title 0", p.stderr)
             if scene == "tour":   # the row and a clock tick are redrawn alone
                 self.assertNotRegex(p.stderr, r"frames: \d+ drawn \(0 partial\)")
-        for name in ("home", "moving", "fallbacks", "cjk", "toast", "info", "launching"):
+        for name in ("home", "moving", "fallbacks", "cjk", "toast", "info", "launching", "slide-right", "slide-left"):
             self.assertGreater((self.shots / f"preview-{name}.png").stat().st_size, 10000, name)
 
     def test_preview_usb_games(self) -> None:

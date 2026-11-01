@@ -53,6 +53,14 @@ body:
     validations:
       required: true
 
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots (optional)
+      description: |
+        Drag in screenshots or a short video: what the TV showed when it went wrong.
+        Take them with the Create button and copy them to a USB drive from the Media Gallery, or photograph the TV.
+
   - type: dropdown
     id: how-often
     attributes:

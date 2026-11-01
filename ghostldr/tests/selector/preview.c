@@ -36,6 +36,10 @@
  * game without one (no row); the row gone once Settings' switch is off
  * (Square opens Settings again).
  *
+ * slide: Right twice, Left twice (the tile left of the focus partly off
+ * screen mid-move).  --verify also draws focus rings partly off each edge
+ * and checks they leave their inside and the outside untouched.
+ *
  * Art: --meta TITLE=FILE reads a meta.bin (host/gfs_meta.py) as the console
  * reads <prefix>META, QOI and all; --art TITLE=DIR takes icon0.png / pic1.png
  * (a dump's sce_sys) or icon.png / backdrop.png (gfs_meta.py fetch) from DIR.
@@ -576,6 +580,37 @@ static void events(struct sel *S, struct script *sc, u64 now)
         }
         sc->e++;
     }
+}
+
+/* The focus ring (draw_rring) of a tile partly off the screen, as the tile
+ * left of the focus is mid-move: its inside and everything beyond the
+ * surface's edges stay as they were.  Its inside was once filled (a white
+ * square that faded as the ring did) when its left edge was off screen.
+ * Returns how many pixels were wrong. */
+static int check_ring(void)
+{
+    enum { W = 400, H = 300, PAD = 64 };
+    static u32 buf[(H + 2) * (W + 2 * PAD)];
+    int bad = 0;
+    static const int xs[] = {-200, -9, -4, 0, 37, 300, 396};
+    for (unsigned k = 0; k < sizeof(xs) / sizeof(xs[0]); k++) {
+        for (unsigned i = 0; i < sizeof(buf) / 4; i++)
+            buf[i] = 0xFF000000u;
+        /* rows W + 2 * PAD apart, PAD columns either side of the surface's W */
+        surface s = {buf + (W + 2 * PAD) + PAD, W, H, W + 2 * PAD, 0, 0};
+        int x = xs[k], y = 20, w = 276, h = 276, t = 4, r = 24;
+        draw_rring(&s, x, y, w, h, r, t, 0xF5FFFFFFu);
+        for (int yy = -1; yy <= H; yy++)
+            for (int xx = -PAD; xx < W + PAD; xx++) {
+                u32 c = s.px[(s64)yy * s.stride + xx];
+                int outside = xx < 0 || xx >= W || yy < 0 || yy >= H;
+                int inside = (xx >= x + t && xx < x + w - t && yy >= y + r && yy < y + h - r) || /* not the */
+                             (xx >= x + r && xx < x + w - r && yy >= y + t && yy < y + h - t);   /* corners */
+                if ((outside || inside) && c != 0xFF000000u)
+                    bad++;
+            }
+    }
+    return bad;
 }
 
 /* a step of the UI and its frame, timed, and checked against a whole redraw */
@@ -1145,6 +1180,14 @@ int main(int argc, char **argv)
             {3100, PAD_CROSS, 0, NULL}, {3180, 0, 0, NULL}, {5000, 0, 0, NULL},
         };
         RUN(ev);
+    } else if (!strcmp(scene_name, "slide")) { /* Right twice, Left twice: the tile left of the focus as it moves */
+        static const struct event ev[] = {
+            {800, PAD_RIGHT, 0, NULL}, {880, 0, 0, NULL}, {1000, 0, 0, "slide-right"},
+            {1800, PAD_RIGHT, 0, NULL}, {1880, 0, 0, NULL},
+            {2800, PAD_LEFT, 0, NULL}, {2880, 0, 0, NULL}, {3000, 0, 0, "slide-left"},
+            {3800, PAD_LEFT, 0, NULL}, {3880, 0, 0, NULL}, {4800, 0, 0, NULL},
+        };
+        RUN(ev);
     } else if (!strcmp(scene_name, "launch")) {
         static const struct event ev[] = {
             {1000, 0, 0, "before"}, {1100, PAD_CROSS, 0, NULL}, {1180, 0, 0, NULL}, {1260, 0, 0, "launching"},
@@ -1162,5 +1205,7 @@ int main(int argc, char **argv)
                 P.partial, (double)P.draw_ns / P.frames / 1e6, (double)P.draw_max_ns / 1e6);
     if (P.verify)
         fprintf(stderr, "verify: %d of %d partial frames differ from a whole redraw\n", P.mismatches, P.partial);
+    if (P.verify)
+        fprintf(stderr, "verify: focus ring off screen: %d pixels drawn inside or beyond the edges\n", check_ring());
     return 0;
 }
