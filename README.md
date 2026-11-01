@@ -20,10 +20,8 @@ No Python and no program on a computer.
 
 ## What works
 
-- **Ghost of Tsushima v2.18** (CUSA11456) plays. It is the most tested title.
-- **Bloodborne 1.09** (CUSA00900) plays: loading, playing and saving.
 - **OpenOrbis homebrew** runs, and **Apollo Save Tool** runs on your saves.
-- **Games run from a USB drive**, in folders of any name. No install step.
+- **PS4 decrypted game dumps run from a USB drive**, in folders of any name.
 - **A game selector** with Settings: it checks your games and drives, installs games over the network, and comes back when a game ends.
 - **An FTP server** on the PS5 while the selector or a game runs.
 - **An ELF loader** for homebrew developers: send a payload, get its output back.
@@ -43,8 +41,8 @@ Download the files from the [latest release](https://github.com/asylumexp/ghostl
 ## Compatibility
 
 - **PS5, firmware 13.60 and later:** supported, with US or EU SWRR.
-- **PS4:** homebrew and small titles only. The PS4 gives SWRR 2.5 GiB of memory; Ghost needs about 4 GiB.
-- **Jak X with UltraC0re** instead of SWRR: experimental.
+- **PS4:** homebrew and small titles only. The PS4 gives SWRR 2.5 GiB of memory; almost all PS4 games will need more than that.
+- **Jak X with UltraC0re** instead of SWRR: experimental, will only work with a small number of titles.
 - **PS5 games:** no. SWRR runs in PS4 mode.
 
 ## Documentation
@@ -75,4 +73,3 @@ MIT, see [LICENSE](LICENSE). It covers ghostldr's own code only; Luac0re, ps4lib
 - PS4 symbol names from [idc/ps4libdoc](https://github.com/idc/ps4libdoc).
 - [ps5-payload-sdk](https://github.com/ps5-payload-dev/sdk), by John Törnblom (dev payloads only).
 - [Noto Sans](https://github.com/notofonts/latin-greek-cyrillic), by the Noto Project Authors (the selector's font).
-- [shadPS4](https://github.com/shadps4-emu/shadPS4), used only as a reference for how system functions behave. No shadPS4 code is included.
