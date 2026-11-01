@@ -6,14 +6,22 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
+/* 16 KiB-aligned, as on the console: the harness rounds to 0x4000 (arena_write), and x86's
+ * 4 KiB pages would let that reach the memory below, malloc's included */
 void *sys_map(unsigned long size)
 {
-    void *p = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, -1, 0);
+    size = (size + 0x3fff) & ~0x3fffUL;
+    char *p = mmap(NULL, size + 0x4000, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, -1, 0);
     if (p == MAP_FAILED) {
         perror("mmap");
         exit(3);
     }
-    return p;
+    char *at = (char *)(((unsigned long)p + 0x3fff) & ~0x3fffUL);
+    if (at > p)
+        munmap(p, at - p);
+    if (at + size < p + size + 0x4000)
+        munmap(at + size, p + size + 0x4000 - (at + size));
+    return at;
 }
 
 void sys_protect(void *addr, unsigned long size, int writable)
