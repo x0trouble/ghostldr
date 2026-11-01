@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Make a release: the files a user needs, their checksums, and the zip.
+"""Make a release: the files a user needs and their checksums.
 
     python3 tools/make_release.py [--out DIR] [--version VERSION] [--no-make]
                                   [--deny WORD ...] [--deny-file FILE]
@@ -10,21 +10,16 @@ Builds the loader (make -s in ghostldr/native) unless --no-make, then writes
 into DIR (default build/release):
 
     ghostldr.lua, ghostldr-ext.bin, ghostldr-elfldr.bin   from build/ghostldr
-    manager.lua                                           from ghostldr/lua
-    README.txt                                            tools/release-README.txt, with the version
-    SHA256SUMS.txt                                        the five above, the zip and the saves
-    ghostldr-<version>.zip                                the five above and their SHA256SUMS.txt, flat
     ghostldr-<version>-save-<US|EU>-<TITLE>.zip           with --save: the autoloader's saves, one zip per
                                                           region: decrypted (Apollo) and, given, encrypted
                                                           (tools/make_save.py, docs/developers.md#making-a-release)
+    SHA256SUMS.txt                                        all of the above
 
-The release page gets the zip, the five files one by one, the saves and
-SHA256SUMS.txt.
-No Python and no source go in: developers take the repository.  The zip is
-reproducible: entries sorted, fixed times and permissions, the same bytes for
-the same inputs.
+The release page gets these files one by one, with the pkgextract-cli
+executables (tools/pkgextract-cli/build.py) added to SHA256SUMS.txt.
+No Python and no source go in: developers take the repository.
 
-Before writing anything it checks the five files for anything of this
+Before writing anything it checks the three files for anything of this
 computer's or its owner's: a private-network address that isn't one of the
 docs' examples, this computer's home folder or another user folder path, its
 user name, its host name, git's user.email, and every word given with --deny
@@ -47,10 +42,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 BUILT = ("ghostldr.lua", "ghostldr-ext.bin", "ghostldr-elfldr.bin")
-MANAGER = "manager.lua"
-README = "README.txt"
 SUMS = "SHA256SUMS.txt"
-FILES = BUILT + (MANAGER, README)
 # The addresses the docs and the tests use as examples
 EXAMPLE_IPS = {"192.168.1.10", "192.168.1.23", "192.168.1.123", "192.168.0.20", "192.0.2.10", "127.0.0.1"}
 ZIP_TIME = (1980, 1, 1, 0, 0, 0)
@@ -132,7 +124,7 @@ def sums_text(files: dict[str, bytes]) -> bytes:
 
 
 def zip_bytes(files: dict[str, bytes]) -> bytes:
-    """A flat zip of files: sorted, fixed times and permissions, deflated."""
+    """A flat zip of files: sorted, fixed times and permissions, deflated (make_save's save zips)."""
     import io
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as z:
@@ -145,32 +137,22 @@ def zip_bytes(files: dict[str, bytes]) -> bytes:
     return buf.getvalue()
 
 
-def collect(version: str, built: Path = REPO / "build/ghostldr", lua: Path = REPO / "ghostldr/lua",
-            readme: Path = REPO / "tools/release-README.txt") -> dict[str, bytes]:
-    """The five files of a release, by name."""
+def collect(built: Path = REPO / "build/ghostldr") -> dict[str, bytes]:
+    """The three files of a release, by name."""
     files = {}
     for n in BUILT:
         p = built / n
         if not p.is_file():
             die(f"{p} is missing: run make -C ghostldr/native (or leave out --no-make)")
         files[n] = p.read_bytes()
-    if not (lua / MANAGER).is_file():
-        die(f"{lua / MANAGER} is missing")
-    files[MANAGER] = (lua / MANAGER).read_bytes()
-    files[README] = readme.read_text(encoding="utf-8").replace("@VERSION@", version).encode()
     return files
 
 
-def make(out: Path, version: str, files: dict[str, bytes], words: list[str],
-         saves: dict[str, bytes] | None = None) -> list[Path]:
-    """Check the files, then write them, the sums, the zip and the saves (checked by make_save) into out."""
+def make(out: Path, files: dict[str, bytes], words: list[str], saves: dict[str, bytes] | None = None) -> list[Path]:
+    """Check the files, then write them, the saves (checked by make_save) and the sums into out."""
     bad = [b for n in sorted(files) for b in find_personal(n, files[n], words)]
     if bad:
         die("not releasing: personal data in the files:\n  " + "\n  ".join(bad[:30]))
-    inner = dict(files)
-    inner[SUMS] = sums_text(files)
-    zname = f"ghostldr-{version}.zip"
-    zdata = zip_bytes(inner)
     if out.exists():
         shutil.rmtree(out)
     out.mkdir(parents=True)
@@ -178,12 +160,10 @@ def make(out: Path, version: str, files: dict[str, bytes], words: list[str],
     for n in sorted(files):
         (out / n).write_bytes(files[n])
         written.append(out / n)
-    (out / zname).write_bytes(zdata)
-    written.append(out / zname)
     for n in sorted(saves or {}):
         (out / n).write_bytes(saves[n])
         written.append(out / n)
-    (out / SUMS).write_bytes(sums_text({**files, zname: zdata, **(saves or {})}))
+    (out / SUMS).write_bytes(sums_text({**files, **(saves or {})}))
     written.append(out / SUMS)
     return written
 
@@ -207,14 +187,14 @@ def main(argv: list[str] | None = None) -> int:
     if not args.no_make:
         subprocess.run(["make", "-s", "-C", str(REPO / "ghostldr/native")], check=True)
     extra = list(args.deny) + (read_deny_file(args.deny_file) if args.deny_file else [])
-    files = collect(version)
+    files = collect()
     words = personal_words(extra)
     saves = None
     if args.save:
         import make_save
         saves = make_save.save_zips(args.save, version, keystones={"us": args.keystone_us, "eu": args.keystone_eu},
                                     words=words, encrypted={"us": args.encrypted_us, "eu": args.encrypted_eu})
-    written = make(args.out.resolve(), version, files, words, saves)
+    written = make(args.out.resolve(), files, words, saves)
     for p in written:
         print(f"{sha256(p.read_bytes())}  {p.stat().st_size:>10}  {p.name}")
     print(f"make_release: {version} in {args.out}")

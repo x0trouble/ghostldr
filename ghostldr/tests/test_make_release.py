@@ -1,6 +1,6 @@
 """tools/make_release.py, offline:
-the five files, their checksums, the flat reproducible zip, and the check that
-nothing of the maintainer's computer goes out.
+the three files, their checksums, the reproducible zip make_save uses, and the
+check that nothing of the maintainer's computer goes out.
 
     python3 -m unittest discover -s ghostldr/tests
 """
@@ -21,16 +21,12 @@ R = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(R)
 
 
-def fake_tree(base: Path) -> tuple[Path, Path, Path]:
-    built, lua = base / "build", base / "lua"
+def fake_tree(base: Path) -> Path:
+    built = base / "build"
     built.mkdir()
-    lua.mkdir()
     for n in R.BUILT:
-        (built / n).write_bytes(n.encode() + b"\x00payload\x00/user/home/\x00" + bytes(range(256)))
-    (lua / R.MANAGER).write_text("-- manager\nlocal example = '192.168.1.123'\n")
-    readme = base / "README.in"
-    readme.write_text("ghostldr @VERSION@\nhttps://example.invalid/@VERSION@/guide\n")
-    return built, lua, readme
+        (built / n).write_bytes(n.encode() + b"\x00payload\x00/user/home/\x00192.168.1.123\x00" + bytes(range(256)))
+    return built
 
 
 class PersonalData(unittest.TestCase):
@@ -72,54 +68,39 @@ class Release(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         self.base = Path(self.tmp.name)
-        self.built, self.lua, self.readme = fake_tree(self.base)
+        self.built = fake_tree(self.base)
 
     def tearDown(self) -> None:
         self.tmp.cleanup()
 
-    def files(self, version: str = "v1.0.0") -> dict[str, bytes]:
-        return R.collect(version, self.built, self.lua, self.readme)
+    def files(self) -> dict[str, bytes]:
+        return R.collect(self.built)
 
-    def test_the_five_files(self) -> None:
-        files = self.files()
-        self.assertEqual(sorted(files), sorted(R.FILES))
-        self.assertEqual(files[R.README], b"ghostldr v1.0.0\nhttps://example.invalid/v1.0.0/guide\n")
+    def test_the_three_files(self) -> None:
+        self.assertEqual(sorted(self.files()), sorted(R.BUILT))
 
-    def test_writes_files_sums_and_a_flat_zip(self) -> None:
+    def test_writes_files_and_sums(self) -> None:
         out = self.base / "out"
-        R.make(out, "v1.0.0", self.files(), [])
-        zname = "ghostldr-v1.0.0.zip"
-        self.assertEqual(sorted(p.name for p in out.iterdir()), sorted(list(R.FILES) + [zname, R.SUMS]))
-        # the release page's SHA256SUMS.txt: every file beside it, the zip too
+        R.make(out, self.files(), [])
+        self.assertEqual(sorted(p.name for p in out.iterdir()), sorted(list(R.BUILT) + [R.SUMS]))
+        # the release page's SHA256SUMS.txt: every file beside it
         sums = dict(reversed(line.split("  ")) for line in (out / R.SUMS).read_text().splitlines())
-        self.assertEqual(sorted(sums), sorted(list(R.FILES) + [zname]))
+        self.assertEqual(sorted(sums), sorted(R.BUILT))
         for n, h in sums.items():
             self.assertEqual(hashlib.sha256((out / n).read_bytes()).hexdigest(), h, n)
-        with zipfile.ZipFile(out / zname) as z:
-            names = z.namelist()
-            self.assertEqual(names, sorted(list(R.FILES) + [R.SUMS]), "flat and sorted")
-            self.assertFalse(any(n.endswith(".py") or "/" in n for n in names), "no Python, no folders")
-            for info in z.infolist():
-                self.assertEqual(info.date_time, R.ZIP_TIME)
-                self.assertEqual(info.external_attr >> 16, 0o644)
-            inner = dict(reversed(line.split("  ")) for line in z.read(R.SUMS).decode().splitlines())
-            self.assertEqual(sorted(inner), sorted(R.FILES))
-            for n in R.FILES:
-                self.assertEqual(z.read(n), (out / n).read_bytes())
-                self.assertEqual(hashlib.sha256(z.read(n)).hexdigest(), inner[n])
 
     def test_reproducible(self) -> None:
         a, b = self.base / "a", self.base / "b"
-        R.make(a, "v1.0.0", self.files(), [])
-        R.make(b, "v1.0.0", self.files(), [])
+        R.make(a, self.files(), [])
+        R.make(b, self.files(), [])
         for p in a.iterdir():
             self.assertEqual(p.read_bytes(), (b / p.name).read_bytes(), p.name)
 
     def test_refuses_personal_data_and_writes_nothing(self) -> None:
-        (self.lua / R.MANAGER).write_text("-- built at /Users/someone/ghostldr for 192.168.7.77\n")
+        (self.built / "ghostldr.lua").write_text("-- built at /Users/someone/ghostldr for 192.168.7.77\n")
         out = self.base / "out"
         with self.assertRaises(SystemExit) as cm:
-            R.make(out, "v1.0.0", self.files(), [])
+            R.make(out, self.files(), [])
         self.assertIn("192.168.7.77", str(cm.exception))
         self.assertIn("/Users/someone", str(cm.exception))
         self.assertFalse(out.exists())
@@ -130,22 +111,14 @@ class Release(unittest.TestCase):
             self.files()
         self.assertIn("ghostldr-ext.bin", str(cm.exception))
 
-    def test_zip_bytes_alone(self) -> None:
-        z = zipfile.ZipFile(io.BytesIO(R.zip_bytes({"b": b"2", "a": b"1"})))
+    def test_zip_bytes(self) -> None:
+        data = R.zip_bytes({"b": b"2", "a": b"1"})
+        self.assertEqual(data, R.zip_bytes({"a": b"1", "b": b"2"}), "reproducible")
+        z = zipfile.ZipFile(io.BytesIO(data))
         self.assertEqual(z.namelist(), ["a", "b"])
-
-
-class TheRepository(unittest.TestCase):
-    def test_the_readme_template(self) -> None:
-        text = (ROOT / "tools/release-README.txt").read_text(encoding="utf-8")
-        self.assertIn("@VERSION@", text)
-        for n in R.BUILT + (R.MANAGER, R.SUMS):
-            self.assertIn(n, text)
-        self.assertNotIn("python3", text.lower(), "no Python commands")
-        self.assertEqual(R.find_personal("README.txt", text.encode(), []), [])
-
-    def test_manager_lua_is_clean(self) -> None:
-        self.assertEqual(R.find_personal(R.MANAGER, (ROOT / "ghostldr/lua" / R.MANAGER).read_bytes(), []), [])
+        for info in z.infolist():
+            self.assertEqual(info.date_time, R.ZIP_TIME)
+            self.assertEqual(info.external_attr >> 16, 0o644)
 
 
 if __name__ == "__main__":

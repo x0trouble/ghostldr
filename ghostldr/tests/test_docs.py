@@ -92,10 +92,12 @@ class ReleaseGuide(unittest.TestCase):
 
     def test_the_release_files_are_named(self) -> None:
         text = (ROOT / "docs/using-the-release.md").read_text(encoding="utf-8")
-        for name in ("ghostldr.lua", "ghostldr-ext.bin", "ghostldr-elfldr.bin", "manager.lua", "README.txt",
-                     "SHA256SUMS.txt", "ghostldr-<version>.zip", "ghostldr-<version>-save-US-CUSA03474.zip",
+        for name in ("ghostldr.lua", "ghostldr-ext.bin", "ghostldr-elfldr.bin", "SHA256SUMS.txt",
+                     "ghostldr-<version>-save-US-CUSA03474.zip",
                      "ghostldr-<version>-save-EU-CUSA03492.zip", "pkgextract-cli-macos", "pkgextract-cli-windows-x64.exe"):
             self.assertIn(name, text)
+        for name in ("manager.lua", "README.txt", "ghostldr-<version>.zip"):
+            self.assertNotIn(name, text, "no longer in a release")
 
     def test_both_ways_to_start(self) -> None:
         text = (ROOT / "docs/using-the-release.md").read_text(encoding="utf-8")

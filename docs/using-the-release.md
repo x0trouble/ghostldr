@@ -22,10 +22,7 @@ Download them from the [release page](https://github.com/asylumexp/ghostldr/rele
 | `ghostldr.lua` | The bootstrap. Luac0re's loader runs it. |
 | `ghostldr-ext.bin` | ghostldr itself, with the game selector. `ghostldr.lua` keeps it on the PS5 after the first time. |
 | `ghostldr-elfldr.bin` | The [ELF loader](developers.md#the-elf-loader) on its own, for payloads without games (PS5). |
-| `manager.lua` | A web page for installing games and backing up saves, without booting ghostldr ([below](#without-the-selector-managerlua)). |
-| `README.txt` | The short version of this page. |
 | `SHA256SUMS.txt` | The files' checksums. |
-| `ghostldr-<version>.zip` | The six files above in one zip. |
 | `ghostldr-<version>-save-US-CUSA03474.zip`, `ghostldr-<version>-save-EU-CUSA03492.zip` | The [autoloader save](#a-the-autoloader-save), one per SWRR region. Each holds it twice: decrypted, for Apollo Save Tool, and encrypted, for Save Wizard. |
 | `pkgextract-cli-windows-x64.exe`, `pkgextract-cli-macos`, `pkgextract-cli-linux-x64`, `pkgextract-cli-linux-arm64` | A tool for your computer that extracts a fake-signed PS4 PKG into a game folder for the USB drive. One file, nothing to install. The macOS one runs on Intel and Apple silicon alike. |
 
@@ -165,14 +162,6 @@ The page shows the progress, the speed and the time left. Keep the page open, th
 - **Not enough space,** or a file of 4 GiB or more for a FAT32 drive: the page says so before anything is written.
 - **Interrupted:** the page carries on by itself. Closed it? Choose the same game again and Install: what's on the PS5 already is kept.
 - **Removing:** the page's list of installed games has a **Remove** button, or use Settings → Games. A game's progress stays.
-
-### Without the selector: manager.lua
-
-`manager.lua` serves the same install page without booting ghostldr, into saved data only. It also downloads and restores saves.
-
-1. With Luac0re's loader listening, send it: `nc CONSOLE 9026 < manager.lua`.
-2. Open `http://CONSOLE:8090/` in a browser. Type the token the TV shows into the page: it is needed to install, restore or delete anything. **Install a game** opens the install page.
-3. **Exit** on the page gives Luac0re's loader back.
 
 ## Back to the game selector
 

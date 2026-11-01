@@ -14,7 +14,7 @@ For homebrew developers and for working on ghostldr itself. To run a release, se
 | `ghostldr/tests/` | Offline tests. |
 | `ghostldr/payloads/`, `host/payloads/` | Payloads for ghostldr's ELF loader, and dev payloads for jailbroken consoles. |
 | `plans/`, `tools/contrib/` | Community memory plans and their collection server ([tools/contrib/README.md](../tools/contrib/README.md)). |
-| `tools/` | `fetch_deps.sh`, `make_release.py`, `make_save.py`, and `release-README.txt` (the release's `README.txt`). |
+| `tools/` | `fetch_deps.sh`, `make_release.py`, `make_save.py` and `pkgextract-cli/`. |
 
 ## Building and testing
 
@@ -191,6 +191,6 @@ Jak X (EU CUSA07992, update 1.04) with UltraC0re 1.0.2 runs ghostldr from a chec
        --deny-file ../deny.txt
    ```
 
-   It writes the five files, `README.txt` from `tools/release-README.txt`, the flat zip, the two save zips and `SHA256SUMS.txt` into `build/release/`. Before writing, it checks every file for anything of this computer: private addresses other than the docs' examples, user folders, the user and host names, git's email, and the words in `--deny-file` (console names, account IDs: keep that file outside the repository).
+   It writes `ghostldr.lua`, `ghostldr-ext.bin`, `ghostldr-elfldr.bin`, the two save zips and `SHA256SUMS.txt` into `build/release/`. Before writing, it checks every file for anything of this computer: private addresses other than the docs' examples, user folders, the user and host names, git's email, and the words in `--deny-file` (console names, account IDs: keep that file outside the repository).
 
-The PKG tool is built apart from this: `python3 tools/pkgextract-cli/build.py` (the .NET 9 SDK; LibOrbisPkg comes from `tools/fetch_deps.sh` at a pinned commit, with `tools/pkgextract-cli/LibOrbisPkg.patch`) writes one executable per platform: `pkgextract-cli-macos` (NativeAOT, x64 and arm64 joined with `lipo`; needs macOS), `pkgextract-cli-linux-x64` and `-linux-arm64` (NativeAOT in the .NET SDK's Docker image; needs Docker) and `pkgextract-cli-windows-x64.exe` (.NET single-file, trimmed), with `SHA256SUMS.txt`; `--only` builds some. LibOrbisPkg (LGPL-3.0) is linked in: this source and `build.py` rebuild it with any copy of LibOrbisPkg, and `pkgextract-cli --licenses` prints the licences. The dev payloads are built apart too.
+The PKG tool is built apart from this: `python3 tools/pkgextract-cli/build.py` (the .NET 9 SDK; LibOrbisPkg comes from `tools/fetch_deps.sh` at a pinned commit, with `tools/pkgextract-cli/LibOrbisPkg.patch`) writes one executable per platform: `pkgextract-cli-macos` (NativeAOT, x64 and arm64 joined with `lipo`; needs macOS), `pkgextract-cli-linux-x64` and `-linux-arm64` (NativeAOT in the .NET SDK's Docker image; needs Docker) and `pkgextract-cli-windows-x64.exe` (.NET single-file, trimmed), with `SHA256SUMS.txt`; `--only` builds some. Put the four beside the release's files and add their lines to the release's `SHA256SUMS.txt`. LibOrbisPkg (LGPL-3.0) is linked in: this source and `build.py` rebuild it with any copy of LibOrbisPkg, and `pkgextract-cli --licenses` prints the licences. The dev payloads are built apart too.

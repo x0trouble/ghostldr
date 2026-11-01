@@ -231,23 +231,18 @@ class MakeSave(unittest.TestCase):
         self.assertIn("192.168.7.77", str(cm.exception))
 
     def test_beside_the_release(self) -> None:
-        built, lua = self.base / "build", self.base / "lua"
+        built = self.base / "build"
         built.mkdir()
-        lua.mkdir()
         for n in R.BUILT:
             (built / n).write_bytes(n.encode())
-        (lua / R.MANAGER).write_text("-- manager\n")
-        readme = self.base / "README.in"
-        readme.write_text("ghostldr @VERSION@\n")
         saves = {f"ghostldr-v1.0.0-save-{r}.zip": r.encode() for r in ("US-CUSA03474", "EU-CUSA03492")}
         out = self.base / "out"
-        R.make(out, "v1.0.0", R.collect("v1.0.0", built, lua, readme), [], saves)
+        R.make(out, R.collect(built), [], saves)
         sums = dict(reversed(line.split("  ")) for line in (out / R.SUMS).read_text().splitlines())
+        self.assertEqual(sorted(sums), sorted(list(R.BUILT) + list(saves)))
         for n, d in saves.items():
             self.assertEqual(sums[n], hashlib.sha256(d).hexdigest())
             self.assertEqual((out / n).read_bytes(), d)
-        with zipfile.ZipFile(out / "ghostldr-v1.0.0.zip") as z:
-            self.assertFalse([n for n in z.namelist() if "save" in n])        # the flat zip stays the five
 
 
 if __name__ == "__main__":
