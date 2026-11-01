@@ -73,6 +73,15 @@ __attribute__((force_align_arg_pointer, noreturn)) static void payload_thread_ab
         K.usleep(1000000);
 }
 
+/* A thread parked for good, in the core's code (ghost_api.park): what the
+ * extension stops but can't end safely sleeps here, since the extension's
+ * own code goes when the title does. */
+__attribute__((force_align_arg_pointer, noreturn)) void core_park(void)
+{
+    for (;;)
+        K.usleep(1000000);
+}
+
 /* The extension's swap file (ext/src/swap.c): a fault in a heap it backs in
  * part is its to answer, and the access is tried again. */
 int (*g_swap_fault)(u64 addr);

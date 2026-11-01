@@ -165,6 +165,9 @@ static int elfldr_select(struct el_select *s)
         ext_abandon();
         return -12;
     }
+    s32 (*detach)(u64) = host_real("scePthreadDetach"); /* its stack goes back as it ends */
+    if (detach)
+        detach(tid);
     g_choose = choose, g_library = library;
     char title[16];
     /* the FTP server beside it: the release's port (these flags' port bits
@@ -181,6 +184,7 @@ static int elfldr_select(struct el_select *s)
     memcpy(s->title, title, sizeof(s->title));
     gfs_unmount_all();
     ext_abandon();
+    direct_free_all(); /* the call's own direct memory: the boot's call starts afresh */
     logf("elfldr: stopped (%d): the extension and its executable memory are given back", g_el_rc);
     if (picked == SEL_EXIT_LOADER) /* Settings: "Close ghostldr": no second call */
         return picked;

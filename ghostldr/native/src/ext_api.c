@@ -108,4 +108,5 @@ const struct ghost_api g_ghost_api = {
     .dm_nusage = &g_dm_nusage,
     .profile_record = profile_record,
     .swap_fault = &g_swap_fault,
+    .park = core_park,
 };

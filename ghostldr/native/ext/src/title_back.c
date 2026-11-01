@@ -10,11 +10,20 @@
  *    (failure.c, crash.c: D->back), or when L1+R1+Options+touchpad are held
  *    on the controller.
  *  - Its threads, and ghostldr's own made for it (the core's list, tls.c),
- *    end: each is sent SIGUSR2, whose handler sends it to scePthreadExit
- *    instead of back to what it was doing.  For the first second and a half
- *    only threads stopped in the title's own code are taken (one inside a
- *    system library may hold that library's lock, which the next title
- *    needs), then any that isn't writing ghostldr's log, then any.
+ *    stop: each is sent SIGUSR2, whose handler sends it on instead of back to
+ *    what it was doing.  One stopped in the title's own code goes to
+ *    scePthreadExit.  For the first second and a half only those are taken
+ *    (one inside a system library may hold that library's lock, which the
+ *    next title needs).  Then the rest are cancelled (scePthreadCancel): one
+ *    asleep in a wait, a cancellation point, ends there the way libkernel
+ *    ends threads (Bloodborne: almost all of its threads); each that ended
+ *    is detached at the end, which gives its stack and thread slot back.  What is still there after another 1.2 s, caught in
+ *    a system library outside a wait, is parked for good in the core's code
+ *    (ghost_api.park): ending it there can abort SWRR (libkernel did, for a
+ *    thread in its lock code: Bloodborne's CSChrThread3,
+ *    SYSTEM_PTHREAD_RUNTIME_ERROR), and parking keeps its slot, so only those
+ *    few are parked (60 parked a time ran a third Bloodborne out of threads);
+ *    not while it writes ghostldr's log, for the next two seconds.
  *  - What the title holds in SWRR's process goes: its compute queues (the
  *    GPU reads their rings), AvPlayers (their threads call the title back),
  *    audio ports, its VideoOut handle (the screen reads its buffers), its
@@ -179,6 +188,11 @@ static bool in_title(u64 rip)
     return false;
 }
 
+/* the threads parked so far (on_stop), by pthread ID: stop_threads counts them stopped */
+static u64 g_parked[MAX_THREADS];
+static u32 g_nparked;
+static u64 (*g_self)(void);
+
 __attribute__((force_align_arg_pointer, noreturn)) static void thread_end(void)
 {
     void (*ex)(void *) = host_real("scePthreadExit");
@@ -189,18 +203,37 @@ __attribute__((force_align_arg_pointer, noreturn)) static void thread_end(void)
 }
 
 /* SIGUSR2: the thread goes on in thread_end, as if called from where it was
- * (crash.c's payload path); or, not yet taken, back to what it was doing */
+ * (crash.c's payload path), when it was in the title's code; caught in a
+ * system library, once the first second and a half is over, it is parked in
+ * the core instead; not yet taken, it goes back to what it was doing */
 static void on_stop(int sig, void *info, void *ucv)
 {
     u64 *mc = (u64 *)((u8 *)ucv + 0x40); /* mcontext_t (a 0x40-byte header first) */
     u64 rip = mc[20], rsp = mc[23];
     struct ghost_diag *D = GHOST_DIAG(G);
     int f = __atomic_load_n(&g_force, __ATOMIC_ACQUIRE);
-    if ((f == 0 && !in_title(rip)) || (f == 1 && D && __atomic_load_n(&D->lock, __ATOMIC_ACQUIRE)))
+    bool title = in_title(rip);
+    if ((f == 0 && !title) || (f == 1 && D && __atomic_load_n(&D->lock, __ATOMIC_ACQUIRE)))
         return;
+    void (*to)(void) = thread_end;
+    if (!title && G->park) {
+        u32 i = __atomic_fetch_add(&g_nparked, 1, __ATOMIC_ACQ_REL);
+        if (i < MAX_THREADS && g_self)
+            g_parked[i] = g_self();
+        to = G->park;
+    }
     mc[23] = ALIGN_DOWN(rsp - 0x100, 16) - 8;
-    mc[20] = (u64)thread_end;
+    mc[20] = (u64)to;
     (void)sig, (void)info;
+}
+
+static bool parked(u64 tid)
+{
+    u32 n = __atomic_load_n(&g_nparked, __ATOMIC_ACQUIRE);
+    for (u32 i = 0; i < n && i < MAX_THREADS; i++)
+        if (g_parked[i] == tid)
+            return true;
+    return false;
 }
 
 static int set_handler(void (*fn)(int, void *, void *))
@@ -214,6 +247,10 @@ static int set_handler(void (*fn)(int, void *, void *))
     return sa ? sa(SIGUSR2, &a, NULL) : -1;
 }
 
+/* the listed threads, kept for detach_ended */
+static u64 *g_all;
+static u32 g_nall;
+
 /* every listed thread ended: how many are left */
 static u32 stop_threads(void)
 {
@@ -225,16 +262,30 @@ static u32 stop_threads(void)
         logf("back: no way to stop the title's threads");
         return 1;
     }
-    u32 n = G->thread_list(tids, names, MAX_THREADS), left = n, round = 0;
+    g_self = self;
+    __atomic_store_n(&g_nparked, 0, __ATOMIC_RELEASE);
+    int (*cancel)(u64) = host_real("scePthreadCancel");
+    u32 n = G->thread_list(tids, names, MAX_THREADS), left = n, round = 0, cancelled = 0;
     u64 me = self ? self() : 0;
+    if ((g_all = page_alloc(MAX_THREADS * sizeof(u64))) != NULL)
+        memcpy(g_all, tids, n * sizeof(u64)), g_nall = n;
     for (; left && round < 200; round++) {
-        __atomic_store_n(&g_force, round < 50 ? 0 : round < 120 ? 1 : 2, __ATOMIC_RELEASE);
+        /* 0-1.5 s: the title's code only; then a cancel each; from 2.7 s parked as well, from 4.8 s any */
+        __atomic_store_n(&g_force, round < 90 ? 0 : round < 160 ? 1 : 2, __ATOMIC_RELEASE);
+        bool cancel_now = round == 50 && cancel;
         left = 0;
         for (u32 i = 0; i < n; i++) {
             if (!tids[i] || tids[i] == me || kill(tids[i], 0) != 0) { /* ended (ESRCH) */
                 tids[i] = 0;
                 continue;
             }
+            if (parked(tids[i])) { /* asleep in the core for good */
+                logf("back: thread %s parked (it was in a system library)", names[i]);
+                tids[i] = 0;
+                continue;
+            }
+            if (cancel_now && cancel(tids[i]) == 0)
+                cancelled++;
             kill(tids[i], SIGUSR2);
             left++;
         }
@@ -243,10 +294,39 @@ static u32 stop_threads(void)
     for (u32 i = 0; i < n; i++)
         if (tids[i] && kill(tids[i], 0) == 0)
             logf("back: thread %s didn't end", names[i]);
-    logf("back: %u threads listed; %u left after %u ms", n, left, round * 30);
+    logf("back: %u threads listed; %u cancelled, %u parked, %u left after %u ms", n, cancelled,
+         __atomic_load_n(&g_nparked, __ATOMIC_ACQUIRE), left, round * 30);
     page_free(tids, MAX_THREADS * sizeof(u64));
     page_free(names, MAX_THREADS * sizeof(char *));
     return left;
+}
+
+/* A thread that ended is still there for libkernel until it is joined or
+ * detached: its stack (flexible memory: Bloodborne's main thread 8 MiB, the
+ * rest ~5 MiB) and its thread slot stay taken, and a third Bloodborne ran out
+ * of flexible memory for its threads' stacks (EAGAIN).  The title won't join
+ * them now: each that ended is detached, which gives them back.  Only an
+ * ended one (pthread_kill: ESRCH), so a parked thread, or another one now in
+ * a listed one's place, is left alone. */
+static void detach_ended(void)
+{
+    int (*kill)(u64, int) = host_dlsym((u32)g_ctx->libkernel_handle, "pthread_kill");
+    s32 (*detach)(u64) = host_real("scePthreadDetach");
+    u64 (*self)(void) = host_real("scePthreadSelf");
+    u64 me = self ? self() : 0;
+    u32 done = 0, alive = 0;
+    for (u32 i = 0; g_all && kill && detach && i < g_nall; i++) {
+        if (!g_all[i] || g_all[i] == me)
+            continue;
+        if (kill(g_all[i], 0) == 0)
+            alive++;
+        else if (detach(g_all[i]) == 0)
+            done++;
+    }
+    logf("back: %u ended threads detached (their stacks go back), %u still there", done, alive);
+    if (g_all)
+        page_free(g_all, MAX_THREADS * sizeof(u64));
+    g_all = NULL, g_nall = 0;
 }
 
 /* ---- the title's handles ---- */
@@ -371,6 +451,7 @@ HIDDEN int title_back(void)
     savedata_title_end();
     restore_buffers();
     set_handler(NULL);
+    detach_ended();
     return 0;
 }
 

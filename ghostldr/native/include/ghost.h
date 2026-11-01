@@ -233,6 +233,7 @@ void *direct_alloc(size_t size, int prot, u64 fixed);
 void dmem_mark(void);        /* CTX_FLAG_RETURN: the direct memory allocated as the title's boot begins */
 u64 dmem_release_new(void);  /* ... and all allocated since given back (its mappings first): bytes */
 void direct_free(void *addr);
+void direct_free_all(void); /* every block still recorded (a call that ran no title, as it returns) */
 void page_free(void *addr, size_t size);
 void *arena_alloc(size_t size);
 char *arena_strdup(const char *s);
@@ -606,6 +607,7 @@ int payload_thread_start(struct module *owner, void *thr, const void *attr, void
                          const char *name);
 extern void (*g_payload_fault)(struct module *owner, int sig, u64 rip, u64 addr); /* crash.c: a payload thread faulted */
 extern int (*g_swap_fault)(u64 addr); /* crash.c: the extension's swap file pages in a faulting address */
+void core_park(void) __attribute__((noreturn)); /* crash.c: a thread sleeps here for good (ghost_api.park) */
 void rpc_lock(void);          /* one user of the compiler-process RPC at a time (loader.c) */
 void rpc_unlock(void);
 void tls_ensure_thread(void);

@@ -198,6 +198,15 @@ u64 dmem_release_new(void)
     return freed;
 }
 
+/* every block still recorded: a call that ran no title (the game selector
+ * beside the ELF loader) gives back what it allocated as it returns */
+void direct_free_all(void)
+{
+    for (u32 i = 0; i < g_dm_cap; i++)
+        if (g_dm[i].addr)
+            direct_free((void *)g_dm[i].addr);
+}
+
 void *page_alloc(size_t size)
 {
     void *p = direct_alloc(size, PROT_READ | PROT_WRITE, 0);

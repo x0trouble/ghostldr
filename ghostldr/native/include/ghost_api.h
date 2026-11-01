@@ -237,6 +237,11 @@ struct ghost_api {
     /* the core's crash handler asks this first about a fault (crash.c): 1, the
      * swap file paged the address in (ext/src/swap.c); NULL when none */
     int (**swap_fault)(u64 addr);
+    /* where a thread is parked for good, sleeping in the core's code (crash.c):
+     * back to the game selector (ext/src/title_back.c) sends a thread caught
+     * in a system library here instead of scePthreadExit, which libkernel
+     * aborts the process over when the thread is inside its lock code */
+    void (*park)(void);
 };
 
 /* A game found under an app root that is a folder of games (a USB drive, or
